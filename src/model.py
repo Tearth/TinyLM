@@ -1,9 +1,9 @@
 import torch
 import bidict
 
-from torch import nn;
-from torch import Tensor;
-from bidict import bidict;
+from torch import nn
+from torch import Tensor
+from bidict import bidict
 
 class Model(nn.Module):
     def __init__(self, vocabulary_size: int, embedding_size: int, context_size: int, transformers_count: int, ff_network_size: int) -> None:
@@ -15,7 +15,7 @@ class Model(nn.Module):
         self.transformers_count = transformers_count
 
         self.tokenizer = Tokenizer()
-        self.encoder_dekoder = EncoderDecoder()
+        self.encoder_decoder = EncoderDecoder()
         self.embedding_layer = EmbeddingLayer(vocabulary_size, embedding_size)
         self.position_encoding_layer = PositionEncodingLayer(context_size, embedding_size)
         self.transformers = nn.ModuleList([
@@ -24,33 +24,41 @@ class Model(nn.Module):
         self.output_layer = OutputLayer(vocabulary_size, embedding_size)
 
     def prompt(self, input: str) -> str:
-        print("Input: " + input)
+        print("Input:", input)
 
         # Split input into a list of separate tokens, where each one represents a single lower-cased word - no interpunction supported for now
         tokens = self.tokenizer.get_tokens(input)
-        token_ids = self.encoder_dekoder.encode_list(tokens)
+        token_ids = self.encoder_decoder.encode_list(tokens)
 
-        print("Tokens: " + ", ".join(tokens))
-        print("Token IDs: " + ", ".join(map(str, token_ids)))
+        print("Tokens:", ", ".join(tokens))
+        print("Token IDs:", ", ".join(map(str, token_ids)))
 
         input_tensor = torch.tensor(token_ids).unsqueeze(0)
         output_tensor = self(input_tensor)
 
-        print()
+        print("Model Input:", input_tensor)
         print("Model Output:")
         print(output_tensor)
 
-        last_vector = output_tensor[:, -1, :]
-        last_vector = torch.softmax(last_vector, dim=-1)
-        best_token_index = int(torch.argmax(last_vector).item())
+        output_vector = output_tensor[:, -1, :]
+        probability_vector = torch.softmax(output_vector, dim=-1)
+        next_token_index = int(torch.argmax(probability_vector).item())
+        next_token = self.encoder_decoder.decode(next_token_index)
 
         print()
-        print("Last Vector:")
-        print(last_vector)
-        print("Best Token Index:")
-        print(best_token_index)
+        print("Output Vector:", output_vector)
+        print("Probability Vector:", probability_vector)
+        print("Best Candidates:")
 
-        return self.encoder_dekoder.decode(best_token_index)
+        sorted = torch.sort(probability_vector, descending=True)
+
+        for i in range(3):
+            index = int(sorted.indices[0][i].item())
+            token = self.encoder_decoder.decode(index)
+            probability = float(probability_vector[0][index].item())
+            print(f"  {token} ({probability * 100.0:0.2f}%)")
+
+        return next_token
     
     def forward(self, x : Tensor) -> Tensor:
         x = self.embedding_layer(x)
@@ -80,10 +88,10 @@ class EncoderDecoder:
     def encode(self, token: str) -> int:
         return self.map[token]
     
-    def encode_list(self, list: list[str]) -> list[int]:
+    def encode_list(self, tokens: list[str]) -> list[int]:
         result = []
 
-        for token in list:
+        for token in tokens:
             result.append(self.encode(token))
         
         return result
