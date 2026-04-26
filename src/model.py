@@ -5,15 +5,23 @@ from torch import nn;
 from torch import Tensor;
 from bidict import bidict;
 
-class Model:
-    def __init__(self, vocabulary_size: int, embedding_size: int, context_size: int):
+class Model(nn.Module):
+    def __init__(self, vocabulary_size: int, embedding_size: int, context_size: int, transformers_count: int, ff_network_size: int) -> None:
+        super().__init__()
+        
         self.vocabulary_size = vocabulary_size
         self.embedding_size = embedding_size
+        self.context_size = context_size
+        self.transformers_count = transformers_count
 
         self.tokenizer = Tokenizer()
         self.encoder_dekoder = EncoderDecoder()
         self.embedding_layer = EmbeddingLayer(vocabulary_size, embedding_size)
         self.position_encoding_layer = PositionEncodingLayer(context_size, embedding_size)
+        self.transformers = nn.ModuleList([
+            TransformerLayer(ff_network_size, embedding_size) for _ in range(transformers_count)
+        ])
+        self.output_layer = OutputLayer(vocabulary_size, embedding_size)
 
     def prompt(self, input: str) -> str:
         print("Input: " + input)
@@ -25,10 +33,37 @@ class Model:
         print("Tokens: " + ", ".join(tokens))
         print("Token IDs: " + ", ".join(map(str, token_ids)))
 
-        return "capybara"
+        input_tensor = torch.tensor(token_ids).unsqueeze(0)
+        output_tensor = self(input_tensor)
+
+        print()
+        print("Model Output:")
+        print(output_tensor)
+
+        last_vector = output_tensor[:, -1, :]
+        last_vector = torch.softmax(last_vector, dim=-1)
+        best_token_index = int(torch.argmax(last_vector).item())
+
+        print()
+        print("Last Vector:")
+        print(last_vector)
+        print("Best Token Index:")
+        print(best_token_index)
+
+        return self.encoder_dekoder.decode(best_token_index)
+    
+    def forward(self, x : Tensor) -> Tensor:
+        x = self.embedding_layer(x)
+        x = self.position_encoding_layer(x)
+
+        for transformer in self.transformers:
+            x = transformer(x)
+        x = self.output_layer(x)
+
+        return x
     
 class Tokenizer:
-    def __init__(self):
+    def __init__(self) -> None:
         pass
 
     def get_tokens(self, input: str) -> list[str]:
@@ -57,7 +92,7 @@ class EncoderDecoder:
         return self.map.inverse[id]
     
 class EmbeddingLayer(nn.Module):
-    def __init__(self, vocabulary_size: int, embedding_size: int):
+    def __init__(self, vocabulary_size: int, embedding_size: int) -> None:
         super().__init__()
 
         self.vocabulary_size = vocabulary_size
@@ -80,7 +115,7 @@ class EmbeddingLayer(nn.Module):
         return self.embedding_matrix(x)
     
 class PositionEncodingLayer(nn.Module):
-    def __init__(self, context_size: int, embedding_size: int):
+    def __init__(self, context_size: int, embedding_size: int) -> None:
         super().__init__()
         
         self.context_size = context_size
@@ -102,7 +137,7 @@ class PositionEncodingLayer(nn.Module):
         return x + position_encoding.unsqueeze(0)
 
 class SelfAttentionLayer(nn.Module):
-    def __init__(self, embedding_size: int):
+    def __init__(self, embedding_size: int) -> None:
         super().__init__()
         
         self.embedding_size = embedding_size
@@ -146,7 +181,7 @@ class SelfAttentionLayer(nn.Module):
         return attention_value
     
 class FeedForwardNetworkLayer(nn.Module):
-    def __init__(self, ff_network_size: int, embedding_size: int):
+    def __init__(self, ff_network_size: int, embedding_size: int) -> None:
         super().__init__()
 
         self.ff_network_size = ff_network_size
@@ -165,3 +200,38 @@ class FeedForwardNetworkLayer(nn.Module):
         x = self.layer_b(x)
 
         return x
+    
+class TransformerLayer(nn.Module):
+    def __init__(self, ff_network_size: int, embedding_size: int) -> None:
+        super().__init__()
+
+        self.attention_layer = SelfAttentionLayer(embedding_size)
+        self.attention_norm = nn.LayerNorm(embedding_size)
+
+        self.ff_network_layer = FeedForwardNetworkLayer(ff_network_size, embedding_size)
+        self.ff_network_norm = nn.LayerNorm(embedding_size)
+
+    def forward(self, x : Tensor) -> Tensor:
+        # Input: [batch; sequence_size; embedding_size]
+        # Output: [batch; sequence_size; embedding_size]
+
+        x = x + self.attention_norm(self.attention_layer(x))
+        x = x + self.ff_network_layer(self.ff_network_norm(x))
+
+        return x
+    
+class OutputLayer(nn.Module):
+    def __init__(self, vocabulary_size: int, embedding_size: int):
+        super().__init__()
+
+        self.vocabulary_size = vocabulary_size
+        self.embedding_size = embedding_size
+
+        self.output_matrix = nn.Linear(embedding_size, vocabulary_size)
+        self.output_norm = nn.LayerNorm(embedding_size)
+
+    def forward(self, x : Tensor) -> Tensor:
+        # Input: [batch; sequence_size; embedding_size]
+        # Output: [batch; sequence_size; vocabulary_size]
+
+        return self.output_matrix(self.output_norm(x))
