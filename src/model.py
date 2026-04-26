@@ -110,12 +110,12 @@ class SelfAttentionLayer(nn.Module):
         # Three matrices to represent Query, Key and Value
         # Query - what tokens are looking for
         # Key - what tokens are representing
-        # Value - what embeddings are proving
+        # Value - what tokens are providing
         self.q_matrix = nn.Linear(embedding_size, embedding_size)
         self.k_matrix = nn.Linear(embedding_size, embedding_size)
         self.v_matrix = nn.Linear(embedding_size, embedding_size)
 
-    def forward(self, x : Tensor):
+    def forward(self, x : Tensor) -> Tensor:
         # Input: [batch; sequence_size; embedding_size]
         # Output: [batch; sequence_size; embedding_size]
 
@@ -124,7 +124,7 @@ class SelfAttentionLayer(nn.Module):
         k = self.k_matrix(x) # [batch; sequence_size; embedding_size]
         v = self.v_matrix(x) # [batch; sequence_size; embedding_size]
 
-        # Mask to cover all tokens after the currently processed one
+        # Mask to cover information about tokens after the currently processed one
         # [ 0, 1, 1 ]
         # [ 0, 0, 1 ]
         # [ 0, 0, 0 ]
@@ -137,10 +137,31 @@ class SelfAttentionLayer(nn.Module):
         # Mask is multiplied by -1e9 and added to attention weights, so masked ones will be near zero after softmax
         attention_weights += mask * -1e9
 
-        # Attention weights are scaled to a range between 0.0 and 1.0
+        # Attention weights are scaled, so the sum of probability is equal to 1.0
         attention_scaled = torch.softmax(attention_weights / (self.embedding_size ** 0.5), dim=-1)
 
         # Attention with scaled weights is multiplied with Value to get the final ones
         attention_value = attention_scaled @ v
 
         return attention_value
+    
+class FeedForwardNetworkLayer(nn.Module):
+    def __init__(self, ff_network_size: int, embedding_size: int):
+        super().__init__()
+
+        self.ff_network_size = ff_network_size
+        self.embedding_size = embedding_size
+
+        self.layer_a = nn.Linear(embedding_size, ff_network_size)
+        self.layer_b = nn.Linear(ff_network_size, embedding_size)
+        self.activation = nn.ReLU()
+    
+    def forward(self, x : Tensor) -> Tensor:
+        # Input: [batch; sequence_size; embedding_size]
+        # Output: [batch; sequence_size; embedding_size]
+
+        x = self.layer_a(x)
+        x = self.activation(x)
+        x = self.layer_b(x)
+
+        return x
