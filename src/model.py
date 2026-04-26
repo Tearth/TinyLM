@@ -45,7 +45,7 @@ class EncoderDecoder:
     def encode(self, token: str) -> int:
         return self.map[token]
     
-    def encode_list(self, list) -> list[int]:
+    def encode_list(self, list: list[str]) -> list[int]:
         result = []
 
         for token in list:
@@ -53,7 +53,7 @@ class EncoderDecoder:
         
         return result
     
-    def decode(self, id) -> str:
+    def decode(self, id: int) -> str:
         return self.map.inverse[id]
     
 class EmbeddingLayer(nn.Module):
@@ -67,6 +67,9 @@ class EmbeddingLayer(nn.Module):
         self.embedding_matrix = nn.Embedding(vocabulary_size, embedding_size)
 
     def forward(self, x: Tensor) -> Tensor:
+        # Input: [batch; sequence_size]
+        # Output: [batch; sequence_size; embedding_size]
+        
         # [ 3, 1, 2]
         #
         # becomes
@@ -83,14 +86,61 @@ class PositionEncodingLayer(nn.Module):
         self.context_size = context_size
         self.embedding_size = embedding_size
 
-        # We position in context has unique vector of `embedding_size` length
+        # Each context position has unique vector of `embedding_size` length
         self.position_matrix = nn.Embedding(context_size, embedding_size)
 
     def forward(self, x : Tensor) -> Tensor:
-        sequence = torch.arange(0, x.size(0), device=x.device)
+        # Input: [batch; sequence_size; embedding_size]
+        # Output: [batch; sequence_size; embedding_size]
+
+        sequence = torch.arange(x.size(1), device=x.device)
         position_encoding = self.position_matrix(sequence)
 
         # [0.1; 0.2; 0.3]   [0.1; 0.1; 0.1]   [0.2; 0.3; 0.4]
         # [0.2; 0.3; 0.4] + [0.2; 0.2; 0.2] = [0.4; 0.5; 0.6]
         # [0.3; 0.4; 0.5]   [0.3; 0.3; 0.3]   [0.6; 0.7; 0.8]
-        return x + position_encoding
+        return x + position_encoding.unsqueeze(0)
+
+class SelfAttentionLayer(nn.Module):
+    def __init__(self, embedding_size: int):
+        super().__init__()
+        
+        self.embedding_size = embedding_size
+
+        # Three matrices to represent Query, Key and Value
+        # Query - what tokens are looking for
+        # Key - what tokens are representing
+        # Value - what embeddings are proving
+        self.q_matrix = nn.Linear(embedding_size, embedding_size)
+        self.k_matrix = nn.Linear(embedding_size, embedding_size)
+        self.v_matrix = nn.Linear(embedding_size, embedding_size)
+
+    def forward(self, x : Tensor):
+        # Input: [batch; sequence_size; embedding_size]
+        # Output: [batch; sequence_size; embedding_size]
+
+        # Embedded and position encoded tokens are projected into Q, K and V matrices
+        q = self.q_matrix(x) # [batch; sequence_size; embedding_size]
+        k = self.k_matrix(x) # [batch; sequence_size; embedding_size]
+        v = self.v_matrix(x) # [batch; sequence_size; embedding_size]
+
+        # Mask to cover all tokens after the currently processed one
+        # [ 0, 1, 1 ]
+        # [ 0, 0, 1 ]
+        # [ 0, 0, 0 ]
+        mask = torch.triu(torch.ones(x.size(1), x.size(1), device=x.device), diagonal=1)
+        mask = mask.unsqueeze(0)
+
+        # Calculate attention weights by multiplying Query and Key
+        attention_weights = q @ torch.transpose(k, -2, -1)
+
+        # Mask is multiplied by -1e9 and added to attention weights, so masked ones will be near zero after softmax
+        attention_weights += mask * -1e9
+
+        # Attention weights are scaled to a range between 0.0 and 1.0
+        attention_scaled = torch.softmax(attention_weights / (self.embedding_size ** 0.5), dim=-1)
+
+        # Attention with scaled weights is multiplied with Value to get the final ones
+        attention_value = attention_scaled @ v
+
+        return attention_value
