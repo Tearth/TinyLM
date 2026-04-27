@@ -1,6 +1,22 @@
-from model import Model
+import argparse
 
-def main():
+from model import Model
+from training import Trainer
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-i", "--inference", action="store_true")
+    parser.add_argument("-t", "--training", action="store_true")
+    args = parser.parse_args()
+
+    if args.inference:
+        entry_point_inference()
+    elif args.training:
+        entry_point_training()
+    else:
+        print("No mode selected")
+
+def entry_point_inference() -> None:
     model = Model(
         vocabulary_size=3,
         embedding_size=4,
@@ -16,6 +32,9 @@ def main():
         output = model.prompt(input)
         input = input + " " + output
         print(" < " + input)
+
+def entry_point_training() -> None:
+    pass
 
 if __name__ == "__main__":
     main()
