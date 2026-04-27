@@ -3,7 +3,7 @@ import bidict
 
 from torch import nn
 from torch import Tensor
-from bidict import bidict
+from tokens import TokenDictionary
 
 class Model(nn.Module):
     def __init__(self, vocabulary_size: int, embedding_size: int, context_size: int, transformers_count: int, ff_network_size: int) -> None:
@@ -14,8 +14,7 @@ class Model(nn.Module):
         self.context_size = context_size
         self.transformers_count = transformers_count
 
-        self.tokenizer = Tokenizer()
-        self.encoder_decoder = EncoderDecoder()
+        self.token_dictionary = TokenDictionary()
         self.embedding_layer = EmbeddingLayer(vocabulary_size, embedding_size)
         self.position_encoding_layer = PositionEncodingLayer(context_size, embedding_size)
         self.transformers = nn.ModuleList([
@@ -27,8 +26,7 @@ class Model(nn.Module):
         print("Input:", input)
 
         # Split input into a list of separate tokens, where each one represents a single lower-cased word - no interpunction supported for now
-        tokens = self.tokenizer.get_tokens(input)
-        token_ids = self.encoder_decoder.encode_list(tokens)
+        (tokens, token_ids) = self.token_dictionary.encode(input, True)
 
         print("Tokens:", ", ".join(tokens))
         print("Token IDs:", ", ".join(map(str, token_ids)))
@@ -43,18 +41,18 @@ class Model(nn.Module):
         output_vector = output_tensor[:, -1, :]
         probability_vector = torch.softmax(output_vector, dim=-1)
         next_token_index = int(torch.argmax(probability_vector).item())
-        next_token = self.encoder_decoder.decode(next_token_index)
+        next_token = self.token_dictionary.decode(next_token_index)
 
         print()
         print("Output Vector:", output_vector)
         print("Probability Vector:", probability_vector)
         print("Best Candidates:")
 
-        sorted = torch.sort(probability_vector, descending=True)
+        probability_vector_sorted = torch.sort(probability_vector, descending=True)
 
         for i in range(3):
-            index = int(sorted.indices[0][i].item())
-            token = self.encoder_decoder.decode(index)
+            index = int(probability_vector_sorted.indices[0][i].item())
+            token = self.token_dictionary.decode(index)
             probability = float(probability_vector[0][index].item())
             print(f"  {token} ({probability * 100.0:0.2f}%)")
 
@@ -69,35 +67,6 @@ class Model(nn.Module):
         x = self.output_layer(x)
 
         return x
-    
-class Tokenizer:
-    def __init__(self) -> None:
-        pass
-
-    def get_tokens(self, input: str) -> list[str]:
-        return input.lower().split()
-    
-class EncoderDecoder:
-    def __init__(self) -> None:
-        self.map = bidict({
-            'floppa1': 0,
-            'floppa2': 1,
-            'floppa3': 2
-        })
-
-    def encode(self, token: str) -> int:
-        return self.map[token]
-    
-    def encode_list(self, tokens: list[str]) -> list[int]:
-        result = []
-
-        for token in tokens:
-            result.append(self.encode(token))
-        
-        return result
-    
-    def decode(self, id: int) -> str:
-        return self.map.inverse[id]
     
 class EmbeddingLayer(nn.Module):
     def __init__(self, vocabulary_size: int, embedding_size: int) -> None:
@@ -143,6 +112,25 @@ class PositionEncodingLayer(nn.Module):
         # [0.2; 0.3; 0.4] + [0.2; 0.2; 0.2] = [0.4; 0.5; 0.6]
         # [0.3; 0.4; 0.5]   [0.3; 0.3; 0.3]   [0.6; 0.7; 0.8]
         return x + position_encoding.unsqueeze(0)
+    
+class TransformerLayer(nn.Module):
+    def __init__(self, ff_network_size: int, embedding_size: int) -> None:
+        super().__init__()
+
+        self.attention_layer = SelfAttentionLayer(embedding_size)
+        self.attention_norm = nn.LayerNorm(embedding_size)
+
+        self.ff_network_layer = FeedForwardNetworkLayer(ff_network_size, embedding_size)
+        self.ff_network_norm = nn.LayerNorm(embedding_size)
+
+    def forward(self, x : Tensor) -> Tensor:
+        # Input: [batch; sequence_size; embedding_size]
+        # Output: [batch; sequence_size; embedding_size]
+
+        x = x + self.attention_norm(self.attention_layer(x))
+        x = x + self.ff_network_layer(self.ff_network_norm(x))
+
+        return x
 
 class SelfAttentionLayer(nn.Module):
     def __init__(self, embedding_size: int) -> None:
@@ -206,25 +194,6 @@ class FeedForwardNetworkLayer(nn.Module):
         x = self.layer_a(x)
         x = self.activation(x)
         x = self.layer_b(x)
-
-        return x
-    
-class TransformerLayer(nn.Module):
-    def __init__(self, ff_network_size: int, embedding_size: int) -> None:
-        super().__init__()
-
-        self.attention_layer = SelfAttentionLayer(embedding_size)
-        self.attention_norm = nn.LayerNorm(embedding_size)
-
-        self.ff_network_layer = FeedForwardNetworkLayer(ff_network_size, embedding_size)
-        self.ff_network_norm = nn.LayerNorm(embedding_size)
-
-    def forward(self, x : Tensor) -> Tensor:
-        # Input: [batch; sequence_size; embedding_size]
-        # Output: [batch; sequence_size; embedding_size]
-
-        x = x + self.attention_norm(self.attention_layer(x))
-        x = x + self.ff_network_layer(self.ff_network_norm(x))
 
         return x
     
