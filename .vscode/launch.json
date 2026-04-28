@@ -5,6 +5,7 @@
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/src/main.py",
+            "args": ["-t", "-d", "./datasets/test.txt", "-m", "./models/test.model"],
             "console": "integratedTerminal"
         }
     ]
