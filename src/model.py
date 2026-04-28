@@ -13,6 +13,7 @@ class Model(nn.Module):
         self.embedding_size = embedding_size
         self.context_size = context_size
         self.transformers_count = transformers_count
+        self.ff_network_size = ff_network_size
 
         self.token_dictionary = TokenDictionary()
         self.embedding_layer = EmbeddingLayer(vocabulary_size, embedding_size)
