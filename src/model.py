@@ -130,7 +130,7 @@ class EmbeddingLayer(nn.Module):
         self.embedding_size = embedding_size
 
         # Each token has unique vector of `embedding_size` length
-        self.embedding_matrix = nn.Embedding(vocabulary_size, embedding_size)
+        self.embedding_matrix = nn.Embedding(vocabulary_size, embedding_size, dtype=torch.bfloat16)
 
     def forward(self, x: Tensor) -> Tensor:
         # Input: [batch; sequence_size]
@@ -153,7 +153,7 @@ class PositionEncodingLayer(nn.Module):
         self.embedding_size = embedding_size
 
         # Each context position has unique vector of `embedding_size` length
-        self.position_matrix = nn.Embedding(context_size, embedding_size)
+        self.position_matrix = nn.Embedding(context_size, embedding_size, dtype=torch.bfloat16)
 
     def forward(self, x : Tensor) -> Tensor:
         # Input: [batch; sequence_size; embedding_size]
@@ -172,10 +172,10 @@ class TransformerLayer(nn.Module):
         super().__init__()
 
         self.attention_layer = SelfAttentionLayer(embedding_size)
-        self.attention_norm = nn.LayerNorm(embedding_size)
+        self.attention_norm = nn.LayerNorm(embedding_size, dtype=torch.bfloat16)
 
         self.ff_network_layer = FeedForwardNetworkLayer(ff_network_size, embedding_size)
-        self.ff_network_norm = nn.LayerNorm(embedding_size)
+        self.ff_network_norm = nn.LayerNorm(embedding_size, dtype=torch.bfloat16)
 
     def forward(self, x : Tensor) -> Tensor:
         # Input: [batch; sequence_size; embedding_size]
@@ -196,9 +196,9 @@ class SelfAttentionLayer(nn.Module):
         # Query - what tokens are looking for
         # Key - what tokens are representing
         # Value - what tokens are providing
-        self.q_matrix = nn.Linear(embedding_size, embedding_size)
-        self.k_matrix = nn.Linear(embedding_size, embedding_size)
-        self.v_matrix = nn.Linear(embedding_size, embedding_size)
+        self.q_matrix = nn.Linear(embedding_size, embedding_size, dtype=torch.bfloat16)
+        self.k_matrix = nn.Linear(embedding_size, embedding_size, dtype=torch.bfloat16)
+        self.v_matrix = nn.Linear(embedding_size, embedding_size, dtype=torch.bfloat16)
 
     def forward(self, x : Tensor) -> Tensor:
         # Input: [batch; sequence_size; embedding_size]
@@ -237,8 +237,8 @@ class FeedForwardNetworkLayer(nn.Module):
         self.ff_network_size = ff_network_size
         self.embedding_size = embedding_size
 
-        self.layer_a = nn.Linear(embedding_size, ff_network_size)
-        self.layer_b = nn.Linear(ff_network_size, embedding_size)
+        self.layer_a = nn.Linear(embedding_size, ff_network_size, dtype=torch.bfloat16)
+        self.layer_b = nn.Linear(ff_network_size, embedding_size, dtype=torch.bfloat16)
         self.activation = nn.ReLU()
     
     def forward(self, x : Tensor) -> Tensor:
@@ -258,8 +258,8 @@ class OutputLayer(nn.Module):
         self.vocabulary_size = vocabulary_size
         self.embedding_size = embedding_size
 
-        self.output_matrix = nn.Linear(embedding_size, vocabulary_size)
-        self.output_norm = nn.LayerNorm(embedding_size)
+        self.output_matrix = nn.Linear(embedding_size, vocabulary_size, dtype=torch.bfloat16)
+        self.output_norm = nn.LayerNorm(embedding_size, dtype=torch.bfloat16)
 
     def forward(self, x : Tensor) -> Tensor:
         # Input: [batch; sequence_size; embedding_size]
