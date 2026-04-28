@@ -10,7 +10,8 @@ from torch.utils.data import DataLoader
 
 class Trainer:
     def __init__(
-        self, model: Model, 
+        self,
+        model: Model, 
         dataset: Dataset, 
         token_dictionary: TokenDictionary,
         max_epoch: int,
@@ -29,13 +30,13 @@ class Trainer:
         self.beta1 = beta1
         self.beta2 = beta2
         self.weight_decay = weight_decay
-
+        
         self.dataloader = DataLoader(
             dataset=self.dataset,
             batch_size=self.batch_size,
             shuffle=True
         )
-
+        
         self.optimizer = torch.optim.AdamW(
             model.parameters(),
             lr=self.learning_rate,
@@ -54,6 +55,8 @@ class Trainer:
             timestamp = time.time()
 
             for (features_batch, labels_batch) in self.dataloader:
+                features_batch = features_batch.to(self.model.device)
+                labels_batch = labels_batch.to(self.model.device)
                 forward_pass_outputs = self.model(features_batch)
 
                 # Model output and labels must be flattened first, to get rid of batch dimension

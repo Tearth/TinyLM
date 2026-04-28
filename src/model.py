@@ -1,14 +1,15 @@
 import torch
 import bidict
 
-from torch import nn
+from torch import device, nn
 from torch import Tensor
 from tokens import TokenDictionary
 
 class Model(nn.Module):
-    def __init__(self, vocabulary_size: int, embedding_size: int, context_size: int, transformers_count: int, ff_network_size: int) -> None:
+    def __init__(self, device: device, vocabulary_size: int, embedding_size: int, context_size: int, transformers_count: int, ff_network_size: int) -> None:
         super().__init__()
         
+        self.device = device
         self.vocabulary_size = vocabulary_size
         self.embedding_size = embedding_size
         self.context_size = context_size
@@ -22,6 +23,7 @@ class Model(nn.Module):
             TransformerLayer(ff_network_size, embedding_size) for _ in range(transformers_count)
         ])
         self.output_layer = OutputLayer(vocabulary_size, embedding_size)
+        self.to(device)
 
     def prompt(self, input: str) -> str:
         print("Input:", input)
