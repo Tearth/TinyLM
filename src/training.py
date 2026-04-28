@@ -11,7 +11,8 @@ from torch.utils.data import DataLoader
 class Trainer:
     def __init__(
         self,
-        model: Model, 
+        model: Model,
+        output_path: str,
         dataset: Dataset, 
         token_dictionary: TokenDictionary,
         max_epoch: int,
@@ -19,9 +20,11 @@ class Trainer:
         learning_rate: float, 
         beta1: float, 
         beta2: float, 
-        weight_decay: float
+        weight_decay: float,
+        save_interval: int
     ) -> None:
         self.model = model
+        self.output_path = output_path
         self.dataset = dataset
         self.token_dictionary = token_dictionary
         self.max_epoch = max_epoch
@@ -30,6 +33,7 @@ class Trainer:
         self.beta1 = beta1
         self.beta2 = beta2
         self.weight_decay = weight_decay
+        self.save_interval = save_interval
         
         self.dataloader = DataLoader(
             dataset=self.dataset,
@@ -74,5 +78,8 @@ class Trainer:
 
             average_loss = total_loss / batches
             delta_time = time.time() - timestamp
+
+            if (epoch % self.save_interval) == 0:
+                self.model.save(self.output_path)
 
             logging.info(f"Epoch {epoch} done in {delta_time:.2f} seconds, average loss: {average_loss:.4f}")

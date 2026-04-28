@@ -13,8 +13,9 @@ def main() -> None:
     parser.add_argument("-t", "--training", action="store_true")
     parser.add_argument("-c", "--cpu", action="store_true")
     parser.add_argument("-g", "--gpu", action="store_true")
-    parser.add_argument("-m", "--model", required=True)
+    parser.add_argument("-m", "--model")
     parser.add_argument("-d", "--dataset")
+    parser.add_argument("-o", "--output")
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -31,34 +32,29 @@ def main() -> None:
         device_name = "cuda" if torch.cuda.is_available() else "cpu"
 
     if args.inference:
-        entry_point_inference()
+        entry_point_inference(device_name)
     elif args.training:
-        entry_point_training(device_name, args.model, args.dataset)
+        entry_point_training(device_name, args.dataset, args.output)
     else:
         print("No mode selected")
 
-def entry_point_inference() -> None:
-    #model = Model(
-    #    vocabulary_size=3,
-    #    embedding_size=4,
-    #    context_size=16,
-    #    transformers_count=2, 
-    #    ff_network_size=8
-    #)
-    #input = "Floppa1 Floppa2 Floppa3"
-
-    #print(" < " + input)
+def entry_point_inference(device_name: str) -> None:
+    model = Model.load("./models/test.model", device_name)
     
-    #for _ in range(5):
-    #    output = model.prompt(input)
-    #    input = input + " " + output
-    #    print(" < " + input)
+    input = "Floppa"
+
+    print(" < " + input)
+    
+    for _ in range(20):
+        output = model.prompt(input)
+        input = input + " " + output
+        print(" < " + input)
     pass
 
-def entry_point_training(device_name: str, model_path: str, dataset_path: str) -> None:
+def entry_point_training(device_name: str, dataset_path: str, output_path: str) -> None:
     logging.info(f"========== TRAINING MODE ==========")
-    logging.info(f"Model: {model_path}")
     logging.info(f"Dataset: {dataset_path}")
+    logging.info(f"Output: {output_path}")
     logging.info(f"Device: {device_name}")
     logging.info(f"===================================")
     logging.info(f"Loading dataset...")
@@ -74,12 +70,13 @@ def entry_point_training(device_name: str, model_path: str, dataset_path: str) -
     logging.info(f"- chunk size: {dataset.chunk_size}")
 
     model = Model(
+        token_dictionary,
         device=torch.device(device_name),
         vocabulary_size=len(token_dictionary.map),
-        embedding_size=256,
-        context_size=16,
-        transformers_count=12, 
-        ff_network_size=128
+        embedding_size=32,
+        context_size=32,
+        transformers_count=6, 
+        ff_network_size=32
     )
     model.train()
 
@@ -90,15 +87,17 @@ def entry_point_training(device_name: str, model_path: str, dataset_path: str) -
     logging.info(f"- ff network size: {model.ff_network_size}")
     
     trainer = Trainer(
-        model, 
-        dataset, 
+        model,
+        output_path,
+        dataset,
         token_dictionary,
-        max_epoch=10000,
-        batch_size=512,
+        max_epoch=2,
+        batch_size=128,
         learning_rate=3e-4,
         beta1=0.9,
         beta2=0.95,
-        weight_decay=0.1
+        weight_decay=0.01,
+        save_interval=1
     )
 
     logging.info(f"Trainer parameters:")
@@ -109,7 +108,7 @@ def entry_point_training(device_name: str, model_path: str, dataset_path: str) -
     logging.info(f"- beta2: {trainer.beta2}")
     logging.info(f"- weight decay: {trainer.weight_decay}")
     logging.info(f"Switching to training loop")
-
+ 
     trainer.run()
 
 if __name__ == "__main__":

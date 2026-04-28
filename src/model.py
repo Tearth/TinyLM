@@ -1,3 +1,5 @@
+from typing import Any
+
 import torch
 import bidict
 
@@ -5,10 +7,31 @@ from torch import device, nn
 from torch import Tensor
 from tokens import TokenDictionary
 
+class ModelPersistence:
+    def __init__(
+        self, state: dict[str, Any],
+        token_dictionary: TokenDictionary,
+        vocabulary_size: int,
+        embedding_size: int,
+        context_size: int,
+        transformers_count: int,
+        ff_network_size: int
+    ) -> None:
+        self.state = state
+        self.token_dictionary = token_dictionary
+        self.vocabulary_size = vocabulary_size
+        self.embedding_size = embedding_size
+        self.context_size = context_size
+        self.transformers_count = transformers_count
+        self.ff_network_size = ff_network_size
+
+        pass
+
 class Model(nn.Module):
-    def __init__(self, device: device, vocabulary_size: int, embedding_size: int, context_size: int, transformers_count: int, ff_network_size: int) -> None:
+    def __init__(self, token_dictionary: TokenDictionary, device: device, vocabulary_size: int, embedding_size: int, context_size: int, transformers_count: int, ff_network_size: int) -> None:
         super().__init__()
         
+        self.token_dictionary = token_dictionary
         self.device = device
         self.vocabulary_size = vocabulary_size
         self.embedding_size = embedding_size
@@ -16,7 +39,6 @@ class Model(nn.Module):
         self.transformers_count = transformers_count
         self.ff_network_size = ff_network_size
 
-        self.token_dictionary = TokenDictionary()
         self.embedding_layer = EmbeddingLayer(vocabulary_size, embedding_size)
         self.position_encoding_layer = PositionEncodingLayer(context_size, embedding_size)
         self.transformers = nn.ModuleList([
@@ -35,6 +57,7 @@ class Model(nn.Module):
         print("Token IDs:", ", ".join(map(str, token_ids)))
 
         input_tensor = torch.tensor(token_ids).unsqueeze(0)
+        input_tensor = input_tensor.to(self.device)
         output_tensor = self(input_tensor)
 
         print("Model Input:", input_tensor)
@@ -70,6 +93,34 @@ class Model(nn.Module):
         x = self.output_layer(x)
 
         return x
+    
+    @staticmethod
+    def load(path: str, device_name: str):
+        persistence = torch.load(path, weights_only=False)
+        model = Model(
+            persistence.token_dictionary,
+            device=torch.device(device_name),
+            vocabulary_size=persistence.vocabulary_size,
+            embedding_size=persistence.embedding_size,
+            context_size=persistence.context_size,
+            transformers_count=persistence.transformers_count, 
+            ff_network_size=persistence.ff_network_size
+        )
+        model.load_state_dict(persistence.state)
+
+        return model
+
+    def save(self, path: str):
+        persistence = ModelPersistence(
+            self.state_dict(),
+            self.token_dictionary,
+            self.vocabulary_size,
+            self.embedding_size,
+            self.context_size,
+            self.transformers_count,
+            self.ff_network_size
+        )
+        torch.save(persistence, path)
     
 class EmbeddingLayer(nn.Module):
     def __init__(self, vocabulary_size: int, embedding_size: int) -> None:
