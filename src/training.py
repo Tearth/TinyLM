@@ -2,7 +2,7 @@ import logging
 import time
 import torch
 
-from torch import Tensor, nn
+from torch import GradScaler, Tensor, autocast, nn
 from model import Model
 from dataset import Dataset
 from tokens import TokenDictionary
@@ -53,6 +53,7 @@ class Trainer:
         )
 
     def run(self) -> None:
+        scaler = GradScaler()
         for epoch in range(1, self.max_epoch + 1):
             total_loss = 0
             batches = 0
@@ -61,17 +62,20 @@ class Trainer:
             for (features_batch, labels_batch) in self.dataloader:
                 features_batch = features_batch.to(self.model.device)
                 labels_batch = labels_batch.to(self.model.device)
-                forward_pass_outputs = self.model(features_batch)
 
-                # Model output and labels must be flattened first, to get rid of batch dimension
-                loss = self.loss_function(
-                    forward_pass_outputs.view(forward_pass_outputs.size(dim=0) * forward_pass_outputs.size(dim=1), forward_pass_outputs.size(dim=2)), 
-                    labels_batch.view(labels_batch.size(dim=0) * labels_batch.size(dim=1))
-                )
+                with autocast(device_type="cuda"):
+                    forward_pass_outputs = self.model(features_batch)
 
+                    # Model output and labels must be flattened first, to get rid of batch dimension
+                    loss = self.loss_function(
+                        forward_pass_outputs.view(forward_pass_outputs.size(dim=0) * forward_pass_outputs.size(dim=1), forward_pass_outputs.size(dim=2)), 
+                        labels_batch.view(labels_batch.size(dim=0) * labels_batch.size(dim=1))
+                    )
+                
                 self.optimizer.zero_grad()
-                loss.backward()
-                self.optimizer.step()
+                scaler.scale(loss).backward()
+                scaler.step(self.optimizer)
+                scaler.update()
 
                 total_loss += loss.item()
                 batches += 1
