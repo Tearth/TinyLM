@@ -60,23 +60,27 @@ def entry_point_training(device_name: str, dataset_path: str, output_path: str) 
     logging.info(f"Loading dataset...")
 
     token_dictionary = TokenDictionary()
-    dataset = ModelDataset(token_dictionary, chunk_size=16)
+    dataset = ModelDataset(
+        token_dictionary, 
+        chunk_size=128,
+        stride=32
+    )
     dataset.load(dataset_path)
 
     logging.info(f"Done, loaded {dataset.size} bytes ({dataset.size / 1024 / 1024:.2f} MB)")
     logging.info(f"Dataset parameters:")
     logging.info(f"- vocabulary size: {len(dataset.token_dictionary.map)}")
-    logging.info(f"- chunks count: {len(dataset.chunks)}")
+    logging.info(f"- chunks count: {len(dataset)}")
     logging.info(f"- chunk size: {dataset.chunk_size}")
 
     model = Model(
         token_dictionary,
         device=torch.device(device_name),
         vocabulary_size=len(token_dictionary.map),
-        embedding_size=32,
-        context_size=32,
-        transformers_count=6, 
-        ff_network_size=32
+        embedding_size=64,
+        context_size=128,
+        transformers_count=4, 
+        ff_network_size=256
     )
     model.train()
 
@@ -91,9 +95,9 @@ def entry_point_training(device_name: str, dataset_path: str, output_path: str) 
         output_path,
         dataset,
         token_dictionary,
-        max_epoch=2,
-        batch_size=128,
-        learning_rate=3e-4,
+        max_epoch=10000,
+        batch_size=256,
+        learning_rate=0.001,
         beta1=0.9,
         beta2=0.95,
         weight_decay=0.01,
