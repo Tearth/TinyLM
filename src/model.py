@@ -177,13 +177,11 @@ class SelfAttentionLayer(nn.Module):
         self.context_size = context_size
         self.embedding_size = embedding_size
 
-        # Three matrices to represent Query, Key and Value
+        # Three matrices (unified into one) to represent Query, Key and Value
         # Query - what tokens are looking for
         # Key - what tokens are representing
         # Value - what tokens are providing
-        self.q_matrix = nn.Linear(embedding_size, embedding_size)
-        self.k_matrix = nn.Linear(embedding_size, embedding_size)
-        self.v_matrix = nn.Linear(embedding_size, embedding_size)
+        self.qkv_matrix = nn.Linear(embedding_size, embedding_size * 3)
 
         self.register_buffer("mask", torch.triu(torch.ones(context_size, context_size, dtype=torch.bool), diagonal=1).unsqueeze(0))
 
@@ -192,9 +190,8 @@ class SelfAttentionLayer(nn.Module):
         # Output: [batch; sequence_size; embedding_size]
 
         # Embedded and position encoded tokens are projected into Q, K and V matrices
-        q = self.q_matrix(x) # [batch; sequence_size; embedding_size]
-        k = self.k_matrix(x) # [batch; sequence_size; embedding_size]
-        v = self.v_matrix(x) # [batch; sequence_size; embedding_size]
+        qkv = self.qkv_matrix(x) # [batch; sequence_size; embedding_size * 3]
+        q, k, v = qkv.chunk(3, dim=-1) # [batch; sequence_size; embedding_size]
 
         # Calculate attention weights by multiplying Query and Key
         attention_weights = q @ torch.transpose(k, -2, -1) # [batch; sequence_size; sequence_size]
