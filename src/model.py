@@ -45,30 +45,22 @@ class Model(nn.Module):
         self.output_layer = OutputLayer(vocabulary_size, embedding_size)
         self.to(device)
 
-    def prompt(self, input: str) -> str:
-        token_ids = []
-
-        for char in input:
-            token_ids.append(self.token_dictionary.encode(char, True))
-
+    def inference(self, token_ids: list[int], candidates: int) -> list[tuple[int, float]]:
         input_tensor = torch.tensor(token_ids).unsqueeze(0)
         input_tensor = input_tensor.to(self.device)
         output_tensor = self(input_tensor)
 
         output_vector = output_tensor[:, -1, :]
         probability_vector = torch.softmax(output_vector, dim=-1)
-        next_token_index = int(torch.argmax(probability_vector).item())
-        next_token = self.token_dictionary.decode(next_token_index)
-
         probability_vector_sorted = torch.sort(probability_vector, descending=True)
+        output = []
 
-        for i in range(3):
-            index = int(probability_vector_sorted.indices[0][i].item())
-            token = self.token_dictionary.decode(index)
-            probability = float(probability_vector[0][index].item())
-            print(f"  {token} ({probability * 100.0:0.2f}%)")
+        for i in range(candidates):
+            token_id = int(probability_vector_sorted.indices[0][i].item())
+            probability = float(probability_vector[0][token_id].item())
+            output.append((token_id, probability))
 
-        return next_token
+        return output
     
     def forward(self, x : Tensor) -> Tensor:
         x = self.embedding_layer(x)
@@ -80,6 +72,9 @@ class Model(nn.Module):
 
         return x
     
+    def parameters_count(self) -> int:
+        return sum(p.numel() for p in self.parameters())
+
     @staticmethod
     def load(path: str, device_name: str):
         persistence = torch.load(path, weights_only=False)
