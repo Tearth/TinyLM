@@ -1,11 +1,9 @@
-from typing import Any
-
 import torch
-import bidict
 
 from torch import device, nn
 from torch import Tensor
 from tokens import TokenDictionary
+from typing import Any
 
 class ModelPersistence:
     def __init__(
@@ -42,37 +40,25 @@ class Model(nn.Module):
         self.embedding_layer = EmbeddingLayer(vocabulary_size, embedding_size)
         self.position_encoding_layer = PositionEncodingLayer(context_size, embedding_size)
         self.transformers = nn.ModuleList([
-            TransformerLayer(ff_network_size, embedding_size) for _ in range(transformers_count)
+            TransformerLayer(ff_network_size, context_size, embedding_size) for _ in range(transformers_count)
         ])
         self.output_layer = OutputLayer(vocabulary_size, embedding_size)
         self.to(device)
 
     def prompt(self, input: str) -> str:
-        print("Input:", input)
+        token_ids = []
 
-        # Split input into a list of separate tokens, where each one represents a single lower-cased word - no interpunction supported for now
-        (tokens, token_ids) = self.token_dictionary.encode(input, True)
-
-        print("Tokens:", ", ".join(tokens))
-        print("Token IDs:", ", ".join(map(str, token_ids)))
+        for char in input:
+            token_ids.append(self.token_dictionary.encode(char, True))
 
         input_tensor = torch.tensor(token_ids).unsqueeze(0)
         input_tensor = input_tensor.to(self.device)
         output_tensor = self(input_tensor)
 
-        print("Model Input:", input_tensor)
-        print("Model Output:")
-        print(output_tensor)
-
         output_vector = output_tensor[:, -1, :]
         probability_vector = torch.softmax(output_vector, dim=-1)
         next_token_index = int(torch.argmax(probability_vector).item())
         next_token = self.token_dictionary.decode(next_token_index)
-
-        print()
-        print("Output Vector:", output_vector)
-        print("Probability Vector:", probability_vector)
-        print("Best Candidates:")
 
         probability_vector_sorted = torch.sort(probability_vector, descending=True)
 
@@ -130,7 +116,7 @@ class EmbeddingLayer(nn.Module):
         self.embedding_size = embedding_size
 
         # Each token has unique vector of `embedding_size` length
-        self.embedding_matrix = nn.Embedding(vocabulary_size, embedding_size, dtype=torch.bfloat16)
+        self.embedding_matrix = nn.Embedding(vocabulary_size, embedding_size)
 
     def forward(self, x: Tensor) -> Tensor:
         # Input: [batch; sequence_size]
@@ -153,13 +139,15 @@ class PositionEncodingLayer(nn.Module):
         self.embedding_size = embedding_size
 
         # Each context position has unique vector of `embedding_size` length
-        self.position_matrix = nn.Embedding(context_size, embedding_size, dtype=torch.bfloat16)
+        self.position_matrix = nn.Embedding(context_size, embedding_size)
+
+        self.register_buffer("sequence", torch.arange(context_size))
 
     def forward(self, x : Tensor) -> Tensor:
         # Input: [batch; sequence_size; embedding_size]
         # Output: [batch; sequence_size; embedding_size]
 
-        sequence = torch.arange(x.size(1), device=x.device)
+        sequence = self.sequence[:x.size(1)] # pyright: ignore[reportIndexIssue]
         position_encoding = self.position_matrix(sequence)
 
         # [0.1; 0.2; 0.3]   [0.1; 0.1; 0.1]   [0.2; 0.3; 0.4]
@@ -168,37 +156,41 @@ class PositionEncodingLayer(nn.Module):
         return x + position_encoding.unsqueeze(0)
     
 class TransformerLayer(nn.Module):
-    def __init__(self, ff_network_size: int, embedding_size: int) -> None:
+    def __init__(self, ff_network_size: int, context_size: int, embedding_size: int) -> None:
         super().__init__()
 
-        self.attention_layer = SelfAttentionLayer(embedding_size)
-        self.attention_norm = nn.LayerNorm(embedding_size, dtype=torch.bfloat16)
+        self.attention_layer = SelfAttentionLayer(context_size, embedding_size)
+        self.attention_norm = nn.LayerNorm(embedding_size)
 
         self.ff_network_layer = FeedForwardNetworkLayer(ff_network_size, embedding_size)
-        self.ff_network_norm = nn.LayerNorm(embedding_size, dtype=torch.bfloat16)
+        self.ff_network_norm = nn.LayerNorm(embedding_size)
 
     def forward(self, x : Tensor) -> Tensor:
         # Input: [batch; sequence_size; embedding_size]
         # Output: [batch; sequence_size; embedding_size]
 
-        x = x + self.attention_norm(self.attention_layer(x))
+        # Pre-LN
+        x = x + self.attention_layer(self.attention_norm(x))
         x = x + self.ff_network_layer(self.ff_network_norm(x))
 
         return x
 
 class SelfAttentionLayer(nn.Module):
-    def __init__(self, embedding_size: int) -> None:
+    def __init__(self, context_size: int, embedding_size: int) -> None:
         super().__init__()
         
+        self.context_size = context_size
         self.embedding_size = embedding_size
 
         # Three matrices to represent Query, Key and Value
         # Query - what tokens are looking for
         # Key - what tokens are representing
         # Value - what tokens are providing
-        self.q_matrix = nn.Linear(embedding_size, embedding_size, dtype=torch.bfloat16)
-        self.k_matrix = nn.Linear(embedding_size, embedding_size, dtype=torch.bfloat16)
-        self.v_matrix = nn.Linear(embedding_size, embedding_size, dtype=torch.bfloat16)
+        self.q_matrix = nn.Linear(embedding_size, embedding_size)
+        self.k_matrix = nn.Linear(embedding_size, embedding_size)
+        self.v_matrix = nn.Linear(embedding_size, embedding_size)
+
+        self.register_buffer("mask", torch.triu(torch.ones(context_size, context_size, dtype=torch.bool), diagonal=1).unsqueeze(0))
 
     def forward(self, x : Tensor) -> Tensor:
         # Input: [batch; sequence_size; embedding_size]
@@ -209,18 +201,12 @@ class SelfAttentionLayer(nn.Module):
         k = self.k_matrix(x) # [batch; sequence_size; embedding_size]
         v = self.v_matrix(x) # [batch; sequence_size; embedding_size]
 
-        # Mask to cover information about tokens after the currently processed one
-        # [ 0, 1, 1 ]
-        # [ 0, 0, 1 ]
-        # [ 0, 0, 0 ]
-        mask = torch.triu(torch.ones(x.size(1), x.size(1), device=x.device), diagonal=1)
-        mask = mask.unsqueeze(0)
-
         # Calculate attention weights by multiplying Query and Key
-        attention_weights = q @ torch.transpose(k, -2, -1)
+        attention_weights = q @ torch.transpose(k, -2, -1) # [batch; sequence_size; sequence_size]
 
-        # Mask is multiplied by -1e9 and added to attention weights, so masked ones will be near zero after softmax
-        attention_weights += mask * -1e9
+        # Apply a precaculated mask, so token can see only previous attention scores
+        mask = self.mask[:, :x.size(1), :x.size(1)] # pyright: ignore[reportIndexIssue]
+        attention_weights = attention_weights.masked_fill(mask, float("-inf"))
 
         # Attention weights are scaled, so the sum of probability is equal to 1.0
         attention_scaled = torch.softmax(attention_weights / (self.embedding_size ** 0.5), dim=-1)
@@ -237,8 +223,8 @@ class FeedForwardNetworkLayer(nn.Module):
         self.ff_network_size = ff_network_size
         self.embedding_size = embedding_size
 
-        self.layer_a = nn.Linear(embedding_size, ff_network_size, dtype=torch.bfloat16)
-        self.layer_b = nn.Linear(ff_network_size, embedding_size, dtype=torch.bfloat16)
+        self.layer_a = nn.Linear(embedding_size, ff_network_size)
+        self.layer_b = nn.Linear(ff_network_size, embedding_size)
         self.activation = nn.ReLU()
     
     def forward(self, x : Tensor) -> Tensor:
@@ -258,11 +244,12 @@ class OutputLayer(nn.Module):
         self.vocabulary_size = vocabulary_size
         self.embedding_size = embedding_size
 
-        self.output_matrix = nn.Linear(embedding_size, vocabulary_size, dtype=torch.bfloat16)
-        self.output_norm = nn.LayerNorm(embedding_size, dtype=torch.bfloat16)
+        self.output_matrix = nn.Linear(embedding_size, vocabulary_size, bias=False)
+        self.output_norm = nn.LayerNorm(embedding_size)
 
     def forward(self, x : Tensor) -> Tensor:
         # Input: [batch; sequence_size; embedding_size]
         # Output: [batch; sequence_size; vocabulary_size]
 
-        return self.output_matrix(self.output_norm(x))
+        #return self.output_matrix(self.output_norm(x))
+        return self.output_matrix(x)
