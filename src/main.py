@@ -49,6 +49,9 @@ def entry_point_inference(model_path: str, prompt: str, device_name: str) -> Non
     logging.info(f"Loading model...")
     
     model = Model.load(model_path, device_name)
+    model.to(model.device)
+    model.eval()
+
     input = prompt
     
     logging.info(f"Model:")
@@ -62,7 +65,7 @@ def entry_point_inference(model_path: str, prompt: str, device_name: str) -> Non
     print("-------------------------------------")
     print(prompt, end="")
     
-    for _ in range(2038):
+    for _ in range(2048):
         context = input[-model.context_size:]
         context_token_ids = []
 

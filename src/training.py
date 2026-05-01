@@ -48,9 +48,17 @@ class Trainer:
             weight_decay=self.weight_decay
         )
 
+        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer=self.optimizer,
+            patience=3,
+            factor=0.5
+        )
+
         self.loss_function = nn.CrossEntropyLoss(
             ignore_index=self.token_dictionary.encode_pad()
         )
+
+        self.model.train()
 
     def run(self) -> None:
         scaler = GradScaler()
@@ -63,7 +71,7 @@ class Trainer:
                 features_batch = features_batch.to(self.model.device)
                 labels_batch = labels_batch.to(self.model.device)
 
-                with autocast(device_type="cuda"):
+                with autocast(device_type=self.model.device.type):
                     forward_pass_outputs = self.model(features_batch)
 
                     # Model output and labels must be flattened first, so there's not explicit batch dimension
@@ -83,7 +91,9 @@ class Trainer:
             average_loss = total_loss / batches
             delta_time = time.time() - timestamp
 
+            self.scheduler.step(average_loss)
+
             if (epoch % self.save_interval) == 0:
                 self.model.save(self.output_path)
 
-            logging.info(f"Epoch {epoch} done in {delta_time:.2f} seconds, average loss: {average_loss:.4f}")
+            logging.info(f"Epoch {epoch} done in {delta_time:.2f} seconds, learning rate: {self.optimizer.param_groups[0]["lr"]}, average loss: {average_loss:.4f}")
