@@ -10,10 +10,13 @@ from tokens import TokenDictionary
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("-i", "--inference", action="store_true")
-    parser.add_argument("-t", "--training", action="store_true")
-    parser.add_argument("-c", "--cpu", action="store_true")
-    parser.add_argument("-g", "--gpu", action="store_true")
+
+    inference_group = parser.add_mutually_exclusive_group(required=True)
+    inference_group.add_argument("-i", "--inference", action="store_true")
+    inference_group.add_argument("-t", "--training", action="store_true")
+    device_group = parser.add_mutually_exclusive_group()
+    device_group.add_argument("-c", "--cpu", action="store_true")
+    device_group.add_argument("-g", "--gpu", action="store_true")
     parser.add_argument("-m", "--model")
     parser.add_argument("-d", "--dataset")
     parser.add_argument("-o", "--output")
@@ -26,6 +29,18 @@ def main() -> None:
         datefmt='%Y-%m-%d %H:%M:%S'
     )
 
+    if args.inference and not args.model:
+        parser.error("--model is required for inference mode")
+        
+    if args.inference and not args.prompt:
+        parser.error("--prompt is required for inference mode")
+
+    if args.training and not args.dataset:
+        parser.error("--dataset is required for training mode")
+
+    if args.training and not args.output:
+        parser.error("--output is required for training mode")
+
     if args.cpu:
         device_name = "cpu"
     elif args.gpu:
@@ -37,8 +52,6 @@ def main() -> None:
         entry_point_inference(args.model, args.prompt, device_name)
     elif args.training:
         entry_point_training(args.model, args.dataset, args.output, device_name)
-    else:
-        logging.error("No mode selected")
 
 def entry_point_inference(model_path: str, prompt: str, device_name: str) -> None:
     logging.info(f"========== INFERENCE MODE ==========")
