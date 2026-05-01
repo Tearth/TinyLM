@@ -90,7 +90,7 @@ def entry_point_training(model_path: str | None, dataset_path: str, output_path:
     token_dictionary = TokenDictionary()
     dataset = ModelDataset(
         token_dictionary, 
-        chunk_size=256,
+        chunk_size=512,
         stride=128
     )
     dataset.load(dataset_path)
@@ -107,16 +107,18 @@ def entry_point_training(model_path: str | None, dataset_path: str, output_path:
             device=torch.device(device_name),
             vocabulary_size=len(token_dictionary.map),
             embedding_size=192,
-            context_size=256,
+            context_size=512,
             transformers_count=4,
             heads_count=4,
-            ff_network_size=768
+            ff_network_size=768,
+            dropout_rate=0.1
         )
     else:
         model = Model.load(model_path, device_name)
 
+    model.to(model.device)
     model.train()
-
+    
     logging.info(f"Model:")
     logging.info(f"- parameters: {model.parameters_count()}")
     logging.info(f"- embedding size: {model.embedding_size}")
@@ -124,6 +126,7 @@ def entry_point_training(model_path: str | None, dataset_path: str, output_path:
     logging.info(f"- transformers: {model.transformers_count}")
     logging.info(f"- heads count: {model.heads_count}")
     logging.info(f"- ff network size: {model.ff_network_size}")
+    logging.info(f"- dropout rate: {model.dropout_rate}")
     
     trainer = Trainer(
         model,
@@ -131,7 +134,7 @@ def entry_point_training(model_path: str | None, dataset_path: str, output_path:
         dataset,
         token_dictionary,
         max_epoch=10000,
-        batch_size=128,
+        batch_size=64,
         learning_rate=0.001,
         beta1=0.9,
         beta2=0.95,

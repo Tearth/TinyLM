@@ -14,7 +14,8 @@ class ModelPersistence:
         context_size: int,
         transformers_count: int,
         heads_count: int,
-        ff_network_size: int
+        ff_network_size: int,
+        dropout_rate: float
     ) -> None:
         self.state = state
         self.token_dictionary = token_dictionary
@@ -24,6 +25,7 @@ class ModelPersistence:
         self.transformers_count = transformers_count
         self.heads_count = heads_count
         self.ff_network_size = ff_network_size
+        self.dropout_rate = dropout_rate
 
         pass
 
@@ -37,7 +39,8 @@ class Model(nn.Module):
         context_size: int, 
         transformers_count: int, 
         heads_count: int, 
-        ff_network_size: int
+        ff_network_size: int,
+        dropout_rate: float
     ) -> None:
         super().__init__()
         
@@ -49,15 +52,14 @@ class Model(nn.Module):
         self.transformers_count = transformers_count
         self.heads_count = heads_count
         self.ff_network_size = ff_network_size
+        self.dropout_rate = dropout_rate
 
         self.embedding_layer = EmbeddingLayer(vocabulary_size, embedding_size)
-        self.position_encoding_layer = PositionEncodingLayer(context_size, embedding_size)
+        self.position_encoding_layer = PositionEncodingLayer(context_size, embedding_size, self.dropout_rate)
         self.transformers = nn.ModuleList([
-            TransformerLayer(heads_count, ff_network_size, context_size, embedding_size) for _ in range(transformers_count)
+            TransformerLayer(heads_count, ff_network_size, context_size, embedding_size, self.dropout_rate) for _ in range(transformers_count)
         ])
         self.output_layer = OutputLayer(vocabulary_size, embedding_size)
-
-        self.to(device)
 
     def predict(self, token_ids: list[int], candidates: int) -> list[tuple[int, float]]:
         # Prepare input tensor as a single batch
@@ -70,7 +72,7 @@ class Model(nn.Module):
 
         # Normalize probabilities and sort them
         probability_vector = torch.softmax(output_vector, dim=-1)
-        probability_vector_sorted = torch.sort(probability_vector, descending=True)
+        probability_vector_sorted = torch.topk(probability_vector, k=candidates)
         output = []
 
         for i in range(candidates):
@@ -104,7 +106,8 @@ class Model(nn.Module):
             context_size=persistence.context_size,
             transformers_count=persistence.transformers_count,
             heads_count = persistence.heads_count,
-            ff_network_size=persistence.ff_network_size
+            ff_network_size=persistence.ff_network_size,
+            dropout_rate=persistence.dropout_rate
         )
         model.load_state_dict(persistence.state)
 
@@ -119,7 +122,8 @@ class Model(nn.Module):
             self.context_size,
             self.transformers_count,
             self.heads_count,
-            self.ff_network_size
+            self.ff_network_size,
+            self.dropout_rate
         )
         torch.save(persistence, path)
     
@@ -141,15 +145,17 @@ class EmbeddingLayer(nn.Module):
         return self.embedding_matrix(x)
     
 class PositionEncodingLayer(nn.Module):
-    def __init__(self, context_size: int, embedding_size: int) -> None:
+    def __init__(self, context_size: int, embedding_size: int, dropout_rate: float) -> None:
         super().__init__()
         
         self.context_size = context_size
         self.embedding_size = embedding_size
+        self.dropout_rate = dropout_rate
 
         # Embedding with each row representing a vector for the position in the context
         self.position_matrix = nn.Embedding(context_size, embedding_size)
-        
+        self.output_dropout = nn.Dropout(self.dropout_rate)
+
         # Static sequence
         # [0, 1, ..., context_size]
         self.register_buffer("sequence",
@@ -167,41 +173,45 @@ class PositionEncodingLayer(nn.Module):
         position_encoding = self.position_matrix(sequence)
 
         # Sum embeddings and unique position vectors
-        return x + position_encoding.unsqueeze(0)
+        return self.output_dropout(x + position_encoding.unsqueeze(0))
     
 class TransformerLayer(nn.Module):
-    def __init__(self, heads_count: int, ff_network_size: int, context_size: int, embedding_size: int) -> None:
+    def __init__(self, heads_count: int, ff_network_size: int, context_size: int, embedding_size: int, dropout_rate: float) -> None:
         super().__init__()
 
         # Self-attention layer with attention mask to ensure that token can see only previous ones
-        self.attention_layer = SelfAttentionLayer(heads_count, context_size, embedding_size)
+        self.attention_layer = SelfAttentionLayer(heads_count, context_size, embedding_size, dropout_rate)
         self.attention_norm = nn.LayerNorm(embedding_size)
+        self.attention_dropout = nn.Dropout(0.1)
 
         # Feed-forward network for additional input processing
-        self.ff_network_layer = FeedForwardNetworkLayer(ff_network_size, embedding_size)
+        self.ff_network_layer = FeedForwardNetworkLayer(ff_network_size, embedding_size, dropout_rate)
         self.ff_network_norm = nn.LayerNorm(embedding_size)
+        self.ff_network_dropout = nn.Dropout(0.1)
 
     def forward(self, x : Tensor) -> Tensor:
         # Input: [batch; sequence_size; embedding_size]
         # Output: [batch; sequence_size; embedding_size]
 
         # Apply self-attention and feed-forward network (with Pre-LN normalization to stabilize training)
-        x = x + self.attention_layer(self.attention_norm(x))
-        x = x + self.ff_network_layer(self.ff_network_norm(x))
+        x = x + self.attention_dropout(self.attention_layer(self.attention_norm(x)))
+        x = x + self.ff_network_dropout(self.ff_network_layer(self.ff_network_norm(x)))
 
         return x
 
 class SelfAttentionLayer(nn.Module):
-    def __init__(self, heads_count: int, context_size: int, embedding_size: int) -> None:
+    def __init__(self, heads_count: int, context_size: int, embedding_size: int, dropout_rate: float) -> None:
         super().__init__()
         
         self.heads_count = heads_count
         self.context_size = context_size
         self.embedding_size = embedding_size
         self.embedding_size_per_head = embedding_size // heads_count
+        self.dropout_rate = dropout_rate
 
         # Query-Key-Value matrices unified into one big matrix to reduce separate multiplications
         self.qkv_matrix = nn.Linear(embedding_size, embedding_size * 3)
+        self.attention_dropout = nn.Dropout(self.dropout_rate)
 
         # Output matrix projecting attention value into final result
         self.output_matrix = nn.Linear(embedding_size, embedding_size)
@@ -246,6 +256,7 @@ class SelfAttentionLayer(nn.Module):
 
         # Scale and normalize attention weights, so the sum of probability is equal to 1.0
         attention_weights = torch.softmax(attention_weights / (self.embedding_size_per_head ** 0.5), dim=-1)
+        attention_weights = self.attention_dropout(attention_weights)
 
         # Multiply attention weights with Value to get the final values according to their relevance
         attention_value = attention_weights @ v # [batch; heads_count; sequence_size; embedding_size]
@@ -260,16 +271,18 @@ class SelfAttentionLayer(nn.Module):
         return self.output_matrix(attention_value)
     
 class FeedForwardNetworkLayer(nn.Module):
-    def __init__(self, ff_network_size: int, embedding_size: int) -> None:
+    def __init__(self, ff_network_size: int, embedding_size: int, dropout_rate: float) -> None:
         super().__init__()
 
         self.ff_network_size = ff_network_size
         self.embedding_size = embedding_size
+        self.dropout_rate = dropout_rate
 
         # Two linear layers with ReLu activation function to process self-attention output
         self.layer_a = nn.Linear(embedding_size, ff_network_size)
         self.layer_b = nn.Linear(ff_network_size, embedding_size)
         self.activation = nn.ReLU()
+        self.dropout = nn.Dropout(dropout_rate)
     
     def forward(self, x : Tensor) -> Tensor:
         # Input: [batch; sequence_size; embedding_size]
@@ -277,6 +290,7 @@ class FeedForwardNetworkLayer(nn.Module):
 
         x = self.layer_a(x)
         x = self.activation(x)
+        x = self.dropout(x)
         x = self.layer_b(x)
 
         return x
