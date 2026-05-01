@@ -3,7 +3,7 @@ import torch
 from torch import device, nn
 from torch import Tensor
 from tokens import TokenDictionary
-from typing import Any
+from typing import Any, Self
 
 class ModelPersistence:
     def __init__(
@@ -13,6 +13,7 @@ class ModelPersistence:
         embedding_size: int,
         context_size: int,
         transformers_count: int,
+        heads_count: int,
         ff_network_size: int
     ) -> None:
         self.state = state
@@ -21,12 +22,23 @@ class ModelPersistence:
         self.embedding_size = embedding_size
         self.context_size = context_size
         self.transformers_count = transformers_count
+        self.heads_count = heads_count
         self.ff_network_size = ff_network_size
 
         pass
 
 class Model(nn.Module):
-    def __init__(self, token_dictionary: TokenDictionary, device: device, vocabulary_size: int, embedding_size: int, context_size: int, transformers_count: int, ff_network_size: int) -> None:
+    def __init__(
+        self, 
+        token_dictionary: TokenDictionary, 
+        device: device, 
+        vocabulary_size: int, 
+        embedding_size: int, 
+        context_size: int, 
+        transformers_count: int, 
+        heads_count: int, 
+        ff_network_size: int
+    ) -> None:
         super().__init__()
         
         self.token_dictionary = token_dictionary
@@ -35,22 +47,28 @@ class Model(nn.Module):
         self.embedding_size = embedding_size
         self.context_size = context_size
         self.transformers_count = transformers_count
+        self.heads_count = heads_count
         self.ff_network_size = ff_network_size
 
         self.embedding_layer = EmbeddingLayer(vocabulary_size, embedding_size)
         self.position_encoding_layer = PositionEncodingLayer(context_size, embedding_size)
         self.transformers = nn.ModuleList([
-            TransformerLayer(ff_network_size, context_size, embedding_size) for _ in range(transformers_count)
+            TransformerLayer(heads_count, ff_network_size, context_size, embedding_size) for _ in range(transformers_count)
         ])
         self.output_layer = OutputLayer(vocabulary_size, embedding_size)
+
         self.to(device)
 
-    def inference(self, token_ids: list[int], candidates: int) -> list[tuple[int, float]]:
+    def predict(self, token_ids: list[int], candidates: int) -> list[tuple[int, float]]:
+        # Prepare input tensor as a single batch
         input_tensor = torch.tensor(token_ids).unsqueeze(0)
         input_tensor = input_tensor.to(self.device)
-        output_tensor = self(input_tensor)
 
+        # Run inference and extract the last vector, representing a next token probabilities
+        output_tensor = self(input_tensor)
         output_vector = output_tensor[:, -1, :]
+
+        # Normalize probabilities and sort them
         probability_vector = torch.softmax(output_vector, dim=-1)
         probability_vector_sorted = torch.sort(probability_vector, descending=True)
         output = []
@@ -75,23 +93,24 @@ class Model(nn.Module):
     def parameters_count(self) -> int:
         return sum(p.numel() for p in self.parameters())
 
-    @staticmethod
-    def load(path: str, device_name: str):
+    @classmethod
+    def load(cls, path: str, device_name: str) -> Self:
         persistence = torch.load(path, weights_only=False)
-        model = Model(
+        model = cls(
             persistence.token_dictionary,
             device=torch.device(device_name),
             vocabulary_size=persistence.vocabulary_size,
             embedding_size=persistence.embedding_size,
             context_size=persistence.context_size,
-            transformers_count=persistence.transformers_count, 
+            transformers_count=persistence.transformers_count,
+            heads_count = persistence.heads_count,
             ff_network_size=persistence.ff_network_size
         )
         model.load_state_dict(persistence.state)
 
         return model
 
-    def save(self, path: str):
+    def save(self, path: str) -> None:
         persistence = ModelPersistence(
             self.state_dict(),
             self.token_dictionary,
@@ -99,6 +118,7 @@ class Model(nn.Module):
             self.embedding_size,
             self.context_size,
             self.transformers_count,
+            self.heads_count,
             self.ff_network_size
         )
         torch.save(persistence, path)
@@ -110,20 +130,14 @@ class EmbeddingLayer(nn.Module):
         self.vocabulary_size = vocabulary_size
         self.embedding_size = embedding_size
 
-        # Each token has unique vector of `embedding_size` length
+        # Embedding with each row representing a vector for a particular token
         self.embedding_matrix = nn.Embedding(vocabulary_size, embedding_size)
 
     def forward(self, x: Tensor) -> Tensor:
         # Input: [batch; sequence_size]
         # Output: [batch; sequence_size; embedding_size]
         
-        # [ 3, 1, 2]
-        #
-        # becomes
-        #
-        # [0.1; 0.2; 0.3]
-        # [0.2; 0.3; 0.4]
-        # [0.3; 0.4; 0.5]
+        # Look-up vectors for each token in input
         return self.embedding_matrix(x)
     
 class PositionEncodingLayer(nn.Module):
@@ -133,30 +147,37 @@ class PositionEncodingLayer(nn.Module):
         self.context_size = context_size
         self.embedding_size = embedding_size
 
-        # Each context position has unique vector of `embedding_size` length
+        # Embedding with each row representing a vector for the position in the context
         self.position_matrix = nn.Embedding(context_size, embedding_size)
-
-        self.register_buffer("sequence", torch.arange(context_size))
+        
+        # Static sequence
+        # [0, 1, ..., context_size]
+        self.register_buffer("sequence",
+            torch.arange(context_size)
+        )
 
     def forward(self, x : Tensor) -> Tensor:
         # Input: [batch; sequence_size; embedding_size]
         # Output: [batch; sequence_size; embedding_size]
 
+        # Adjust static sequence size to input, so it's possible to add both to each other
         sequence = self.sequence[:x.size(1)] # pyright: ignore[reportIndexIssue]
+
+        # Get position vectors for every input token 
         position_encoding = self.position_matrix(sequence)
 
-        # [0.1; 0.2; 0.3]   [0.1; 0.1; 0.1]   [0.2; 0.3; 0.4]
-        # [0.2; 0.3; 0.4] + [0.2; 0.2; 0.2] = [0.4; 0.5; 0.6]
-        # [0.3; 0.4; 0.5]   [0.3; 0.3; 0.3]   [0.6; 0.7; 0.8]
+        # Sum embeddings and unique position vectors
         return x + position_encoding.unsqueeze(0)
     
 class TransformerLayer(nn.Module):
-    def __init__(self, ff_network_size: int, context_size: int, embedding_size: int) -> None:
+    def __init__(self, heads_count: int, ff_network_size: int, context_size: int, embedding_size: int) -> None:
         super().__init__()
 
-        self.attention_layer = SelfAttentionLayer(context_size, embedding_size)
+        # Self-attention layer with attention mask to ensure that token can see only previous ones
+        self.attention_layer = SelfAttentionLayer(heads_count, context_size, embedding_size)
         self.attention_norm = nn.LayerNorm(embedding_size)
 
+        # Feed-forward network for additional input processing
         self.ff_network_layer = FeedForwardNetworkLayer(ff_network_size, embedding_size)
         self.ff_network_norm = nn.LayerNorm(embedding_size)
 
@@ -164,49 +185,79 @@ class TransformerLayer(nn.Module):
         # Input: [batch; sequence_size; embedding_size]
         # Output: [batch; sequence_size; embedding_size]
 
-        # Pre-LN
+        # Apply self-attention and feed-forward network (with Pre-LN normalization to stabilize training)
         x = x + self.attention_layer(self.attention_norm(x))
         x = x + self.ff_network_layer(self.ff_network_norm(x))
 
         return x
 
 class SelfAttentionLayer(nn.Module):
-    def __init__(self, context_size: int, embedding_size: int) -> None:
+    def __init__(self, heads_count: int, context_size: int, embedding_size: int) -> None:
         super().__init__()
         
+        self.heads_count = heads_count
         self.context_size = context_size
         self.embedding_size = embedding_size
+        self.embedding_size_per_head = embedding_size // heads_count
 
-        # Three matrices (unified into one) to represent Query, Key and Value
-        # Query - what tokens are looking for
-        # Key - what tokens are representing
-        # Value - what tokens are providing
+        # Query-Key-Value matrices unified into one big matrix to reduce separate multiplications
         self.qkv_matrix = nn.Linear(embedding_size, embedding_size * 3)
 
-        self.register_buffer("mask", torch.triu(torch.ones(context_size, context_size, dtype=torch.bool), diagonal=1).unsqueeze(0))
+        # Output matrix projecting attention value into final result
+        self.output_matrix = nn.Linear(embedding_size, embedding_size)
+
+        # Static mask
+        # [ 0, 1, 1 ]
+        # [ 0, 0, 1 ]
+        # [ 0, 0, 0 ]
+        self.register_buffer("mask",
+            torch.triu(torch.ones(context_size, context_size, dtype=torch.bool), diagonal=1)
+        )
 
     def forward(self, x : Tensor) -> Tensor:
         # Input: [batch; sequence_size; embedding_size]
         # Output: [batch; sequence_size; embedding_size]
 
-        # Embedded and position encoded tokens are projected into Q, K and V matrices
+        # Save input dimensions for later use
+        B, S, _ = x.size()
+
+        # Embedded tokens are projected into Q, K and V matrices
+        # Query - what tokens are looking for
+        # Key - what tokens are representing
+        # Value - what tokens are providing
         qkv = self.qkv_matrix(x) # [batch; sequence_size; embedding_size * 3]
+
+        # Split qkv into separate matrices, representing Query, Key or Value
         q, k, v = qkv.chunk(3, dim=-1) # [batch; sequence_size; embedding_size]
 
-        # Calculate attention weights by multiplying Query and Key
-        attention_weights = q @ torch.transpose(k, -2, -1) # [batch; sequence_size; sequence_size]
+        # Project matrices into [batch; sequence_size; heads_count; embeddings_size_per_head] and swap sequence_size with heads_count
+        q = q.view(B, S, self.heads_count, self.embedding_size_per_head).transpose(1, 2) # [batch; heads_count; sequence_size; embeddings_size_per_head]
+        k = k.view(B, S, self.heads_count, self.embedding_size_per_head).transpose(1, 2) # [batch; heads_count; sequence_size; embeddings_size_per_head]
+        v = v.view(B, S, self.heads_count, self.embedding_size_per_head).transpose(1, 2) # [batch; heads_count; sequence_size; embeddings_size_per_head]
 
-        # Apply a precaculated mask, so token can see only previous attention scores
-        mask = self.mask[:, :x.size(1), :x.size(1)] # pyright: ignore[reportIndexIssue]
+        # Calculate attention weights by multiplying Query and transposed Key
+        attention_weights = q @ torch.transpose(k, 2, 3) # [batch; heads_count; sequence_size; sequence_size]
+
+        # Reshape precalculated mask to make it compatible with attention_weights
+        mask = self.mask[None, None, :S, :S] # [1; 1; sequence_size; sequence_size] # type: ignore
+
+        # Apply a precaculated mask, so token can see only preceding attention values
         attention_weights = attention_weights.masked_fill(mask, float("-inf"))
 
-        # Attention weights are scaled, so the sum of probability is equal to 1.0
-        attention_scaled = torch.softmax(attention_weights / (self.embedding_size ** 0.5), dim=-1)
+        # Scale and normalize attention weights, so the sum of probability is equal to 1.0
+        attention_weights = torch.softmax(attention_weights / (self.embedding_size_per_head ** 0.5), dim=-1)
 
-        # Attention with scaled weights is multiplied with Value to get the final ones
-        attention_value = attention_scaled @ v
+        # Multiply attention weights with Value to get the final values according to their relevance
+        attention_value = attention_weights @ v # [batch; heads_count; sequence_size; embedding_size]
+        
+        # Swap sequence_size with heads_count again, so heads can be merged 
+        attention_value = torch.transpose(attention_value, 1, 2) # [batch; sequence_size; heads_count; embedding_size]
 
-        return attention_value
+        # Reshape attention_value to [batch; sequence_size; embedding_size]
+        attention_value = attention_value.contiguous().view(B, S, self.embedding_size) # [batch; sequence_size; embedding_size]
+
+        # Process all separately calculated attention values into coherent output
+        return self.output_matrix(attention_value)
     
 class FeedForwardNetworkLayer(nn.Module):
     def __init__(self, ff_network_size: int, embedding_size: int) -> None:
@@ -215,6 +266,7 @@ class FeedForwardNetworkLayer(nn.Module):
         self.ff_network_size = ff_network_size
         self.embedding_size = embedding_size
 
+        # Two linear layers with ReLu activation function to process self-attention output
         self.layer_a = nn.Linear(embedding_size, ff_network_size)
         self.layer_b = nn.Linear(ff_network_size, embedding_size)
         self.activation = nn.ReLU()
@@ -230,18 +282,17 @@ class FeedForwardNetworkLayer(nn.Module):
         return x
     
 class OutputLayer(nn.Module):
-    def __init__(self, vocabulary_size: int, embedding_size: int):
+    def __init__(self, vocabulary_size: int, embedding_size: int) -> None:
         super().__init__()
 
         self.vocabulary_size = vocabulary_size
         self.embedding_size = embedding_size
 
+        # Projection from embeddings to logits
         self.output_matrix = nn.Linear(embedding_size, vocabulary_size, bias=False)
-        self.output_norm = nn.LayerNorm(embedding_size)
 
     def forward(self, x : Tensor) -> Tensor:
         # Input: [batch; sequence_size; embedding_size]
         # Output: [batch; sequence_size; vocabulary_size]
 
-        #return self.output_matrix(self.output_norm(x))
         return self.output_matrix(x)
