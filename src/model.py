@@ -281,7 +281,7 @@ class FeedForwardNetworkLayer(nn.Module):
         # Two linear layers with ReLu activation function to process self-attention output
         self.layer_a = nn.Linear(embedding_size, ff_network_size)
         self.layer_b = nn.Linear(ff_network_size, embedding_size)
-        self.activation = nn.ReLU()
+        self.activation = nn.GELU()
         self.dropout = nn.Dropout(dropout_rate)
     
     def forward(self, x : Tensor) -> Tensor:
