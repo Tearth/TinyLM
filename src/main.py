@@ -101,15 +101,20 @@ def entry_point_training(dataset_path: str, output_path: str, device_name: str) 
     logging.info(f"- chunks: {len(dataset)}")
     logging.info(f"- chunk size: {dataset.chunk_size}")
 
-    model = Model(
-        token_dictionary,
-        device=torch.device(device_name),
-        vocabulary_size=len(token_dictionary.map),
-        embedding_size=64,
-        context_size=128,
-        transformers_count=4, 
-        ff_network_size=256
-    )
+    if model_path is None:
+        model = Model(
+            token_dictionary,
+            device=torch.device(device_name),
+            vocabulary_size=len(token_dictionary.map),
+            embedding_size=192,
+            context_size=256,
+            transformers_count=4,
+            heads_count=4,
+            ff_network_size=768
+        )
+    else:
+        model = Model.load(model_path, device_name)
+
     model.train()
 
     logging.info(f"Model:")
