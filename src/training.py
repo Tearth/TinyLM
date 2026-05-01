@@ -66,7 +66,7 @@ class Trainer:
                 with autocast(device_type="cuda"):
                     forward_pass_outputs = self.model(features_batch)
 
-                    # Model output and labels must be flattened first, to get rid of batch dimension
+                    # Model output and labels must be flattened first, so there's not explicit batch dimension
                     loss = self.loss_function(
                         forward_pass_outputs.view(forward_pass_outputs.size(dim=0) * forward_pass_outputs.size(dim=1), forward_pass_outputs.size(dim=2)), 
                         labels_batch.view(labels_batch.size(dim=0) * labels_batch.size(dim=1))

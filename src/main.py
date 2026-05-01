@@ -36,7 +36,7 @@ def main() -> None:
     if args.inference:
         entry_point_inference(args.model, args.prompt, device_name)
     elif args.training:
-        entry_point_training(args.dataset, args.output, device_name)
+        entry_point_training(args.model, args.dataset, args.output, device_name)
     else:
         logging.error("No mode selected")
 
@@ -49,6 +49,7 @@ def entry_point_inference(model_path: str, prompt: str, device_name: str) -> Non
     logging.info(f"Loading model...")
     
     model = Model.load(model_path, device_name)
+    input = prompt
     
     logging.info(f"Model:")
     logging.info(f"- parameters: {model.parameters_count()}")
@@ -57,9 +58,9 @@ def entry_point_inference(model_path: str, prompt: str, device_name: str) -> Non
     logging.info(f"- transformers count: {model.transformers_count}")
     logging.info(f"- ff network size: {model.ff_network_size}")
     logging.info(f"Output:")
-    print(prompt, end="")
 
-    input = prompt
+    print("-------------------------------------")
+    print(prompt, end="")
     
     for _ in range(2038):
         context = input[-model.context_size:]
@@ -68,7 +69,7 @@ def entry_point_inference(model_path: str, prompt: str, device_name: str) -> Non
         for char in context:
             context_token_ids.append(model.token_dictionary.encode(char, True))
         
-        candidates = model.inference(context_token_ids, 8)
+        candidates = model.predict(context_token_ids, 4)
 
         keys = list(map(lambda x: x[0], candidates))
         probabilities = list(map(lambda x: x[1], candidates))
@@ -77,9 +78,8 @@ def entry_point_inference(model_path: str, prompt: str, device_name: str) -> Non
 
         input = input + next_token
         print(next_token, end="")
-    pass
 
-def entry_point_training(dataset_path: str, output_path: str, device_name: str) -> None:
+def entry_point_training(model_path: str | None, dataset_path: str, output_path: str, device_name: str) -> None:
     logging.info(f"========== TRAINING MODE ==========")
     logging.info(f"Dataset: {dataset_path}")
     logging.info(f"Output: {output_path}")
@@ -90,12 +90,12 @@ def entry_point_training(dataset_path: str, output_path: str, device_name: str) 
     token_dictionary = TokenDictionary()
     dataset = ModelDataset(
         token_dictionary, 
-        chunk_size=128,
-        stride=32
+        chunk_size=256,
+        stride=128
     )
     dataset.load(dataset_path)
 
-    logging.info(f"Done, loaded {dataset.size} bytes ({dataset.size / 1024 / 1024:.2f} MB)")
+    logging.info(f"Done, loaded {len(dataset.data)} bytes ({len(dataset.data) / 1024 / 1024:.2f} MB)")
     logging.info(f"Dataset :")
     logging.info(f"- vocabulary size: {len(dataset.token_dictionary.map)}")
     logging.info(f"- chunks: {len(dataset)}")
@@ -122,6 +122,7 @@ def entry_point_training(dataset_path: str, output_path: str, device_name: str) 
     logging.info(f"- embedding size: {model.embedding_size}")
     logging.info(f"- context size: {model.context_size}")
     logging.info(f"- transformers: {model.transformers_count}")
+    logging.info(f"- heads count: {model.heads_count}")
     logging.info(f"- ff network size: {model.ff_network_size}")
     
     trainer = Trainer(
@@ -130,7 +131,7 @@ def entry_point_training(dataset_path: str, output_path: str, device_name: str) 
         dataset,
         token_dictionary,
         max_epoch=10000,
-        batch_size=256,
+        batch_size=128,
         learning_rate=0.001,
         beta1=0.9,
         beta2=0.95,

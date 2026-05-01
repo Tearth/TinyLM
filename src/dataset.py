@@ -10,7 +10,6 @@ class ModelDataset(Dataset):
         self.chunk_size = chunk_size
         self.stride = stride
         self.data = torch.empty(0)
-        self.size = 0
 
     def load(self, path: str):
         buffer = []
