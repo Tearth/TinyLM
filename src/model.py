@@ -27,8 +27,6 @@ class ModelPersistence:
         self.ff_network_size = ff_network_size
         self.dropout_rate = dropout_rate
 
-        pass
-
 class Model(nn.Module):
     def __init__(
         self, 
@@ -63,8 +61,7 @@ class Model(nn.Module):
 
     def predict(self, token_ids: list[int], candidates: int) -> list[tuple[int, float]]:
         # Prepare input tensor as a single batch
-        input_tensor = torch.tensor(token_ids).unsqueeze(0)
-        input_tensor = input_tensor.to(self.device)
+        input_tensor = torch.tensor(token_ids, device=self.device).unsqueeze(0)
 
         # Run inference and extract the last vector, representing a next token probabilities
         output_tensor = self(input_tensor)
@@ -173,7 +170,10 @@ class PositionEncodingLayer(nn.Module):
         position_encoding = self.position_matrix(sequence)
 
         # Sum embeddings and unique position vectors
-        return self.output_dropout(x + position_encoding.unsqueeze(0))
+        x = x + position_encoding.unsqueeze(0)
+        x = self.output_dropout(x)
+
+        return x
     
 class TransformerLayer(nn.Module):
     def __init__(self, heads_count: int, ff_network_size: int, context_size: int, embedding_size: int, dropout_rate: float) -> None:
@@ -182,20 +182,26 @@ class TransformerLayer(nn.Module):
         # Self-attention layer with attention mask to ensure that token can see only previous ones
         self.attention_layer = SelfAttentionLayer(heads_count, context_size, embedding_size, dropout_rate)
         self.attention_norm = nn.LayerNorm(embedding_size)
-        self.attention_dropout = nn.Dropout(0.1)
 
         # Feed-forward network for additional input processing
         self.ff_network_layer = FeedForwardNetworkLayer(ff_network_size, embedding_size, dropout_rate)
         self.ff_network_norm = nn.LayerNorm(embedding_size)
-        self.ff_network_dropout = nn.Dropout(0.1)
 
     def forward(self, x : Tensor) -> Tensor:
         # Input: [batch; sequence_size; embedding_size]
         # Output: [batch; sequence_size; embedding_size]
 
-        # Apply self-attention and feed-forward network (with Pre-LN normalization to stabilize training)
-        x = x + self.attention_dropout(self.attention_layer(self.attention_norm(x)))
-        x = x + self.ff_network_dropout(self.ff_network_layer(self.ff_network_norm(x)))
+        # Apply self-attention with Pre-LN normalization to stabilize training
+        residual = x
+        x = self.attention_norm(x)
+        x = self.attention_layer(x)
+        x = residual + x
+
+        # Apply feed-forward network with Pre-LN normalization to stabilize training
+        residual = x
+        x = self.ff_network_norm(x)
+        x = self.ff_network_layer(x)
+        x = residual + x
 
         return x
 
@@ -215,6 +221,7 @@ class SelfAttentionLayer(nn.Module):
 
         # Output matrix projecting attention value into final result
         self.output_matrix = nn.Linear(embedding_size, embedding_size)
+        self.output_dropout = nn.Dropout(self.dropout_rate)
 
         # Static mask
         # [ 0, 1, 1 ]
@@ -245,18 +252,18 @@ class SelfAttentionLayer(nn.Module):
         k = k.view(B, S, self.heads_count, self.embedding_size_per_head).transpose(1, 2) # [batch; heads_count; sequence_size; embeddings_size_per_head]
         v = v.view(B, S, self.heads_count, self.embedding_size_per_head).transpose(1, 2) # [batch; heads_count; sequence_size; embeddings_size_per_head]
 
-        # Calculate attention weights by multiplying Query and transposed Key
-        attention_weights = q @ torch.transpose(k, 2, 3) # [batch; heads_count; sequence_size; sequence_size]
-
         # Reshape precalculated mask to make it compatible with attention_weights
         mask = self.mask[None, None, :S, :S] # [1; 1; sequence_size; sequence_size] # type: ignore
 
+        # Calculate attention weights by multiplying Query and transposed Key
+        attention_weights = q @ torch.transpose(k, 2, 3) # [batch; heads_count; sequence_size; sequence_size]
+
         # Apply a precaculated mask, so token can see only preceding attention values
-        attention_weights = attention_weights.masked_fill(mask, float("-inf"))
+        attention_weights = attention_weights.masked_fill(mask, float("-inf")) # [batch; heads_count; sequence_size; sequence_size]
 
         # Scale and normalize attention weights, so the sum of probability is equal to 1.0
-        attention_weights = torch.softmax(attention_weights / (self.embedding_size_per_head ** 0.5), dim=-1)
-        attention_weights = self.attention_dropout(attention_weights)
+        attention_weights = torch.softmax(attention_weights / (self.embedding_size_per_head ** 0.5), dim=-1) # [batch; heads_count; sequence_size; sequence_size]
+        attention_weights = self.attention_dropout(attention_weights) # [batch; heads_count; sequence_size; sequence_size]
 
         # Multiply attention weights with Value to get the final values according to their relevance
         attention_value = attention_weights @ v # [batch; heads_count; sequence_size; embedding_size]
@@ -268,7 +275,10 @@ class SelfAttentionLayer(nn.Module):
         attention_value = attention_value.contiguous().view(B, S, self.embedding_size) # [batch; sequence_size; embedding_size]
 
         # Process all separately calculated attention values into coherent output
-        return self.output_matrix(attention_value)
+        output = self.output_matrix(attention_value)
+        output = self.output_dropout(output)
+
+        return output
     
 class FeedForwardNetworkLayer(nn.Module):
     def __init__(self, ff_network_size: int, embedding_size: int, dropout_rate: float) -> None:
@@ -281,17 +291,19 @@ class FeedForwardNetworkLayer(nn.Module):
         # Two linear layers with ReLu activation function to process self-attention output
         self.layer_a = nn.Linear(embedding_size, ff_network_size)
         self.layer_b = nn.Linear(ff_network_size, embedding_size)
+        self.layer_a_dropout = nn.Dropout(dropout_rate)
+        self.layer_b_dropout = nn.Dropout(dropout_rate)
         self.activation = nn.GELU()
-        self.dropout = nn.Dropout(dropout_rate)
     
     def forward(self, x : Tensor) -> Tensor:
         # Input: [batch; sequence_size; embedding_size]
         # Output: [batch; sequence_size; embedding_size]
 
-        x = self.layer_a(x)
-        x = self.activation(x)
-        x = self.dropout(x)
-        x = self.layer_b(x)
+        x = self.layer_a(x) # [batch; sequence_size; ff_network_size]
+        x = self.activation(x) # [batch; sequence_size; ff_network_size]
+        x = self.layer_a_dropout(x) # [batch; sequence_size; ff_network_size]
+        x = self.layer_b(x) # [batch; sequence_size; ff_network_size]
+        x = self.layer_b_dropout(x) # [batch; sequence_size; ff_network_size]
 
         return x
     
