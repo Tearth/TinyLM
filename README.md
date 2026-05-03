@@ -8,14 +8,14 @@ usage: main.py [-h] (-i | -t) [-c | -g] [-m MODEL] [-d DATASET] [-o OUTPUT] [-p 
 
 options:
   -h, --help            show this help message and exit
-  -i, --inference       Select inference mode
-  -t, --training        Select training mode
-  -c, --cpu             Set training to use CPU only
-  -g, --gpu             Set training to use GPU via CUDA
-  -m, --model MODEL     Path to the model (works both in inference and training mode)
-  -d, --dataset DATASET Path to the text file (works only in training mode)
-  -o, --output OUTPUT   Path to the output model (works in training mode only)
-  -p, --prompt PROMPT   Prompt for inference mode
+  -i, --inference       select inference mode
+  -t, --training        select training mode
+  -c, --cpu             set training to use CPU only
+  -g, --gpu             set training to use GPU via CUDA
+  -m, --model MODEL     path to the model (works both in inference and training mode)
+  -d, --dataset DATASET path to the text file (works in training mode only)
+  -o, --output OUTPUT   path to the output model (works in training mode only)
+  -p, --prompt PROMPT   prompt for inference mode
 ```
 
 ## Dependencies
@@ -68,7 +68,7 @@ The model can operate on multiple tokens at once, but they alone don't have info
 
 ## Transformer
 
-Transformer architecture has been described for the first time in 2017 in the famous paper "[Attention Is All You Need](https://arxiv.org/pdf/1706.03762)", and since then has become a core building block for every language model, responsible for processing relationship between tokens and enhancing their embeddings with more context. There are usually multiple transformers per model, connected sequentially; for a small model, between 3 and 6 is a good range. Each of them contains two main components: multi-head self-attention and a feed-forward neural network.
+Transformer architecture has been described for the first time in 2017 in the famous paper "[Attention Is All You Need](https://arxiv.org/pdf/1706.03762)", and since then has become a core building block for every language model, responsible for processing relationship between tokens and enhancing their embeddings with more context. There are usually multiple transformers per model, connected sequentially; for a small one, between 3 and 6 is a good range. Each of them contains two main components: multi-head self-attention and a feed-forward neural network.
 
 The architecture of the transformer allows for processing all tokens at once, which is a major advantage compared to recurrent neural networks and greatly benefits inference and training time.
 
@@ -93,7 +93,7 @@ To improve the recognition of various grammatical and punctuation features, embe
 
 ### Feed-Forward Neural Network
 
-The result from the previous block is processed in a two-layer feed-forward neural network, with GELU as the activation function. It enhances the model's capability to process more complex structures, using embeddings enhanced by attention context.
+The result from the previous block is processed in a two-layer feed-forward neural network, with GELU as the activation function. It enhances the model's capability to learn complex patterns by providing non-linear transformation for context-aware embeddings.
 
 <p align="center">
   <img src="https://github.com/Tearth/TinyLM/blob/master/docs/gelu.jpg?raw=true" alt="GELU activation function" />
@@ -103,7 +103,7 @@ The result from the previous block is processed in a two-layer feed-forward neur
 
 ## Output
 
-The output of the last transformer is projected by a linear layer into logits - raw, unnormalized values associated with each token. Applying the softmax function turns them into probabilities, which is the final result of the model that tells what the most likely next token is based on the provided input.
+The output of the last transformer is projected by a linear layer into logits - raw, unnormalized values associated with each token in a dictionary. Applying the softmax function turns them into probabilities, which is the final result of the model that tells what the most likely next token is based on the provided input.
 
 # Training
 
