@@ -12,15 +12,15 @@ def main() -> None:
     parser = argparse.ArgumentParser()
 
     inference_group = parser.add_mutually_exclusive_group(required=True)
-    inference_group.add_argument("-i", "--inference", action="store_true")
-    inference_group.add_argument("-t", "--training", action="store_true")
+    inference_group.add_argument("-i", "--inference", action="store_true", help="Select inference mode")
+    inference_group.add_argument("-t", "--training", action="store_true", help="Select training mode")
     device_group = parser.add_mutually_exclusive_group()
-    device_group.add_argument("-c", "--cpu", action="store_true")
-    device_group.add_argument("-g", "--gpu", action="store_true")
-    parser.add_argument("-m", "--model")
-    parser.add_argument("-d", "--dataset")
-    parser.add_argument("-o", "--output")
-    parser.add_argument("-p", "--prompt")
+    device_group.add_argument("-c", "--cpu", action="store_true", help="Set training to use CPU only")
+    device_group.add_argument("-g", "--gpu", action="store_true", help="Set training to use GPU via CUDA")
+    parser.add_argument("-m", "--model", help="Path to the model (works both in inference and training mode)")
+    parser.add_argument("-d", "--dataset", help="Path to the text file (works only in training mode)")
+    parser.add_argument("-o", "--output", help="Path to the output model (works in training mode only)")
+    parser.add_argument("-p", "--prompt", help="Prompt for inference mode")
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -112,7 +112,7 @@ def entry_point_training(model_path: str | None, dataset_path: str, output_path:
     dataset.load(dataset_path)
 
     logging.info(f"Done, loaded {len(dataset.data)} bytes ({len(dataset.data) / 1024 / 1024:.2f} MB)")
-    logging.info(f"Dataset :")
+    logging.info(f"Dataset:")
     logging.info(f"- vocabulary size: {len(dataset.token_dictionary.map)}")
     logging.info(f"- chunks: {len(dataset)}")
     logging.info(f"- chunk size: {dataset.chunk_size}")
@@ -150,7 +150,7 @@ def entry_point_training(model_path: str | None, dataset_path: str, output_path:
         dataset,
         token_dictionary,
         max_epoch=10000,
-        batch_size=64,
+        batch_size=32,
         learning_rate=0.001,
         beta1=0.9,
         beta2=0.95,

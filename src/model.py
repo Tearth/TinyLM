@@ -183,7 +183,7 @@ class TransformerLayer(nn.Module):
         self.attention_layer = SelfAttentionLayer(heads_count, context_size, embedding_size, dropout_rate)
         self.attention_norm = nn.LayerNorm(embedding_size)
 
-        # Feed-forward network for additional input processing
+        # Feed-forward neural network for additional input processing
         self.ff_network_layer = FeedForwardNetworkLayer(ff_network_size, embedding_size, dropout_rate)
         self.ff_network_norm = nn.LayerNorm(embedding_size)
 
@@ -197,7 +197,7 @@ class TransformerLayer(nn.Module):
         x = self.attention_layer(x)
         x = residual + x
 
-        # Apply feed-forward network with Pre-LN normalization to stabilize training
+        # Apply feed-forward neural network with Pre-LN normalization to stabilize training
         residual = x
         x = self.ff_network_norm(x)
         x = self.ff_network_layer(x)
@@ -216,7 +216,7 @@ class SelfAttentionLayer(nn.Module):
         self.dropout_rate = dropout_rate
 
         # Query-Key-Value matrices unified into one big matrix to reduce separate multiplications
-        self.qkv_matrix = nn.Linear(embedding_size, embedding_size * 3)
+        self.qkv_matrix = nn.Linear(embedding_size, embedding_size * 3, bias=False)
         self.attention_dropout = nn.Dropout(self.dropout_rate)
 
         # Output matrix projecting attention value into final result
@@ -302,8 +302,8 @@ class FeedForwardNetworkLayer(nn.Module):
         x = self.layer_a(x) # [batch; sequence_size; ff_network_size]
         x = self.activation(x) # [batch; sequence_size; ff_network_size]
         x = self.layer_a_dropout(x) # [batch; sequence_size; ff_network_size]
-        x = self.layer_b(x) # [batch; sequence_size; ff_network_size]
-        x = self.layer_b_dropout(x) # [batch; sequence_size; ff_network_size]
+        x = self.layer_b(x) # [batch; sequence_size; embedding_size]
+        x = self.layer_b_dropout(x) # [batch; sequence_size; embedding_size]
 
         return x
     
