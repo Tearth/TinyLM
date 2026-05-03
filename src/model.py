@@ -316,9 +316,13 @@ class OutputLayer(nn.Module):
 
         # Projection from embeddings to logits
         self.output_matrix = nn.Linear(embedding_size, vocabulary_size, bias=False)
+        self.output_norm = nn.LayerNorm(embedding_size)
 
     def forward(self, x : Tensor) -> Tensor:
         # Input: [batch; sequence_size; embedding_size]
         # Output: [batch; sequence_size; vocabulary_size]
 
-        return self.output_matrix(x)
+        x = self.output_norm(x)
+        x = self.output_matrix(x)
+
+        return x
