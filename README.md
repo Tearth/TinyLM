@@ -75,13 +75,16 @@ The architecture of the transformer allows for processing all tokens at once, wh
 ### Multi-Head Self-Attention
 
 The self-attention algorithm enhances token embeddings by contextualizing them within sentences. Each token is projected into three separate matrices:
- - Query - represents a token's relationship with other ones in the sentence
+ - Query - represents token's relationship with other ones in the sentence
  - Key - represents token features
- - Value - represents the token value
+ - Value - represents token value
 
 In the next step, Query and Key matrices are compared (by multiplying), scaled by the square root of the embedding size, processed by the softmax function; the resulting weights (in the form of a matrix representing how token `i` is relevant to token `j`) are then used to obtain the values.
 
-![Softmax formula](./docs/softmax.png)
+<p align="center">
+  <img src="https://github.com/Tearth/TinyLM/blob/master/docs/softmax.png?raw=true" alt="Self-attention formula" style="display: block" />
+  <em>Self-attention formula</em>
+</p>
 
 Another important element of a transformer is causal masking, which ensures that a particular token can see attention weights only from previous tokens in the sentence. This improves training, as they can't "cheat" by looking into the future.
 
@@ -91,7 +94,10 @@ To improve the recognition of various grammatical and punctuation features, embe
 
 The result from the previous block is processed in a two-layer feed-forward neural network, with GELU as the activation function. It enhances the model's capability to process more complex structures, using embeddings enhanced by attention context.
 
-![GELU](./docs/gelu.jpg)
+<p align="center">
+  <img src="https://github.com/Tearth/TinyLM/blob/master/docs/gelu.jpg?raw=true" alt="GELU activation function" style="display: block"/>
+  <em>GELU activation function</em>
+</p>
 
 ## Output
 
