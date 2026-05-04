@@ -12,15 +12,15 @@ def main() -> None:
     parser = argparse.ArgumentParser()
 
     inference_group = parser.add_mutually_exclusive_group(required=True)
-    inference_group.add_argument("-i", "--inference", action="store_true", help="Select inference mode")
-    inference_group.add_argument("-t", "--training", action="store_true", help="Select training mode")
+    inference_group.add_argument("-i", "--inference", action="store_true", help="select inference mode")
+    inference_group.add_argument("-t", "--training", action="store_true", help="select training mode")
     device_group = parser.add_mutually_exclusive_group()
-    device_group.add_argument("-c", "--cpu", action="store_true", help="Set training to use CPU only")
-    device_group.add_argument("-g", "--gpu", action="store_true", help="Set training to use GPU via CUDA")
-    parser.add_argument("-m", "--model", help="Path to the model (works both in inference and training mode)")
-    parser.add_argument("-d", "--dataset", help="Path to the text file (works only in training mode)")
-    parser.add_argument("-o", "--output", help="Path to the output model (works in training mode only)")
-    parser.add_argument("-p", "--prompt", help="Prompt for inference mode")
+    device_group.add_argument("-c", "--cpu", action="store_true", help="set training to use CPU only")
+    device_group.add_argument("-g", "--gpu", action="store_true", help="set training to use GPU via CUDA")
+    parser.add_argument("-m", "--model", help="path to the model (works both in inference and training mode)")
+    parser.add_argument("-d", "--dataset", help="path to the text file (works only in training mode)")
+    parser.add_argument("-o", "--output", help="path to the output model (works in training mode only)")
+    parser.add_argument("-p", "--prompt", help="prompt for inference mode")
     args = parser.parse_args()
 
     logging.basicConfig(
