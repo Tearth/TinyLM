@@ -54,9 +54,7 @@ class Trainer:
             factor=0.5
         )
 
-        self.loss_function = nn.CrossEntropyLoss(
-            ignore_index=self.token_dictionary.encode_pad()
-        )
+        self.loss_function = nn.CrossEntropyLoss()
 
         self.model.train()
 

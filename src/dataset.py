@@ -16,14 +16,7 @@ class ModelDataset(Dataset):
 
         with open(path, encoding="utf-8") as file:
             for line in file:
-                line = line.strip()
-                
-                if len(line) == 0 or line.isspace():
-                    continue
-                
-                for char in line:
-                    buffer.append(self.token_dictionary.encode(char, False))
-                buffer.append(self.token_dictionary.encode("\n", False))
+                buffer.extend(self.token_dictionary.encode_block(line))
 
         self.data = torch.tensor(buffer)
     

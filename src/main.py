@@ -77,20 +77,17 @@ def entry_point_inference(model_path: str, prompt: str, device_name: str) -> Non
 
     print("-------------------------------------")
     print(prompt, end="")
-    
+
     for _ in range(2048):
         context = input[-model.context_size:]
-        context_token_ids = []
-
-        for char in context:
-            context_token_ids.append(model.token_dictionary.encode(char, True))
+        context_token_ids = model.token_dictionary.encode_block(context)
         
         candidates = model.predict(context_token_ids, 4)
 
         keys = list(map(lambda x: x[0], candidates))
         probabilities = list(map(lambda x: x[1], candidates))
         next_token_id = random.choices(keys, probabilities)[0]
-        next_token = model.token_dictionary.decode(next_token_id)
+        next_token = model.token_dictionary.decode_token(next_token_id)
 
         input = input + next_token
         print(next_token, end="")
@@ -101,19 +98,24 @@ def entry_point_training(model_path: str | None, dataset_path: str, output_path:
     logging.info(f"Output: {output_path}")
     logging.info(f"Device: {device_name}")
     logging.info(f"===================================")
-    logging.info(f"Loading dataset...")
 
     token_dictionary = TokenDictionary()
     dataset = ModelDataset(
         token_dictionary, 
-        chunk_size=512,
+        chunk_size=256,
         stride=128
     )
+
+    if model_path is None:
+        logging.info(f"Building token dictionary...")
+        token_dictionary.build(dataset_path, 3000)
+        logging.info(f"Done, constructed {len(dataset.token_dictionary.map)} tokens")
+
+    logging.info(f"Loading dataset...")
     dataset.load(dataset_path)
 
     logging.info(f"Done, loaded {len(dataset.data)} bytes ({len(dataset.data) / 1024 / 1024:.2f} MB)")
     logging.info(f"Dataset:")
-    logging.info(f"- vocabulary size: {len(dataset.token_dictionary.map)}")
     logging.info(f"- chunks: {len(dataset)}")
     logging.info(f"- chunk size: {dataset.chunk_size}")
 
@@ -123,8 +125,8 @@ def entry_point_training(model_path: str | None, dataset_path: str, output_path:
             device=torch.device(device_name),
             vocabulary_size=len(token_dictionary.map),
             embedding_size=192,
-            context_size=512,
-            transformers_count=4,
+            context_size=256,
+            transformers_count=6,
             heads_count=4,
             ff_network_size=768,
             dropout_rate=0.1
@@ -150,7 +152,7 @@ def entry_point_training(model_path: str | None, dataset_path: str, output_path:
         dataset,
         token_dictionary,
         max_epoch=10000,
-        batch_size=32,
+        batch_size=64,
         learning_rate=0.001,
         beta1=0.9,
         beta2=0.95,
