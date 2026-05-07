@@ -134,9 +134,13 @@ def entry_point_training(model_path: str | None, dataset_path: str, output_path:
     else:
         model = Model.load(model_path, device_name)
 
+    logging.info(f"Compiling model...")
+
     model.to(model.device)
     model.train()
-    
+    model.compile()
+
+    logging.info(f"Done")
     logging.info(f"Model:")
     logging.info(f"- parameters: {model.parameters_count()}")
     logging.info(f"- embedding size: {model.embedding_size}")
