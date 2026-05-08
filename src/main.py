@@ -1,6 +1,7 @@
 import argparse
 import logging
 import random
+import time
 import torch
 
 from model import Model
@@ -62,18 +63,23 @@ def entry_point_inference(model_path: str, prompt: str, device_name: str) -> Non
     logging.info(f"Loading model...")
     torch.no_grad()
     
+    timestamp = time.time()
     model = Model.load(model_path, device_name)
     model.to(model.device)
     model.eval()
+    delta_time = time.time() - timestamp
 
     input = prompt
     
+    logging.info(f"Done in {delta_time:.2f} seconds")
     logging.info(f"Model:")
     logging.info(f"- parameters: {model.parameters_count()}")
     logging.info(f"- embedding size: {model.embedding_size}")
     logging.info(f"- context size: {model.context_size}")
-    logging.info(f"- transformers count: {model.transformers_count}")
+    logging.info(f"- transformers: {model.transformers_count}")
+    logging.info(f"- heads count: {model.heads_count}")
     logging.info(f"- ff network size: {model.ff_network_size}")
+    logging.info(f"- dropout rate: {model.dropout_rate}")
     logging.info(f"Output:")
 
     print("-------------------------------------")
@@ -109,18 +115,28 @@ def entry_point_training(model_path: str | None, dataset_path: str, output_path:
 
     if model_path is None:
         logging.info(f"Building token dictionary...")
+
+        timestamp = time.time()
         token_dictionary.build(dataset_path, 3000)
-        logging.info(f"Done, constructed {len(dataset.token_dictionary.map)} tokens")
+        delta_time = time.time() - timestamp
+
+        logging.info(f"Done in {delta_time:.2f} seconds, constructed {len(dataset.token_dictionary.map)} tokens")
 
     logging.info(f"Loading dataset...")
-    dataset.load(dataset_path)
 
-    logging.info(f"Done, loaded {len(dataset.data)} tokens")
+    timestamp = time.time()
+    dataset.load(dataset_path)
+    delta_time = time.time() - timestamp
+
+    logging.info(f"Done in {delta_time:.2f} seconds, loaded {len(dataset.data)} tokens")
     logging.info(f"Dataset:")
     logging.info(f"- chunks: {len(dataset)}")
     logging.info(f"- chunk size: {dataset.chunk_size}")
 
     if model_path is None:
+        logging.info(f"Loading model...")
+    
+        timestamp = time.time()
         model = Model(
             token_dictionary,
             device=torch.device(device_name),
@@ -132,16 +148,21 @@ def entry_point_training(model_path: str | None, dataset_path: str, output_path:
             ff_network_size=768,
             dropout_rate=0.1
         )
+        delta_time = time.time() - timestamp
+
+        logging.info(f"Done in {delta_time:.2f} seconds")
     else:
         model = Model.load(model_path, device_name)
 
     logging.info(f"Compiling model...")
 
+    timestamp = time.time()
     model.to(model.device)
     model.train()
     model.compile()
+    delta_time = time.time() - timestamp
 
-    logging.info(f"Done")
+    logging.info(f"Done in {delta_time:.2f} seconds")
     logging.info(f"Model:")
     logging.info(f"- parameters: {model.parameters_count()}")
     logging.info(f"- embedding size: {model.embedding_size}")
