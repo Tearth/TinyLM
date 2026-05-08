@@ -1,3 +1,5 @@
+import logging
+import os
 import torch
 
 from tokens import TokenDictionary
@@ -13,10 +15,21 @@ class ModelDataset(Dataset):
 
     def load(self, path: str):
         buffer = []
+        read_bytes = 0
+        read_bytes_total = 0
+        file_size = os.path.getsize(path)
 
         with open(path, encoding="utf-8") as file:
             for line in file:
                 buffer.extend(self.token_dictionary.encode_block(line))
+                read_bytes += len(line.encode())
+
+                if read_bytes >= file_size / 10:
+                    read_bytes_total += read_bytes
+                    read_bytes = 0
+                    percent = read_bytes_total * 100 // file_size
+
+                    logging.debug(f"Read {percent}% ({read_bytes_total}/{file_size} bytes)")
 
         self.data = torch.tensor(buffer)
     
