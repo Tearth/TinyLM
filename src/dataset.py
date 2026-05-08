@@ -21,7 +21,7 @@ class ModelDataset(Dataset):
         self.data = torch.tensor(buffer)
     
     def __getitem__(self, idx) -> tuple[Tensor, Tensor]:
-        position = int(idx * self.stride)
+        position = idx * self.stride
         features = self.data[position:position+self.chunk_size]
         labels = self.data[position + 1:position+self.chunk_size + 1]
 

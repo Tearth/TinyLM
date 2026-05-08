@@ -73,6 +73,7 @@ class TokenDictionary:
             for word in words.values():
                 for i in reversed(range(0, len(word.tokens) - 1)):
                     if (word.tokens[i], word.tokens[i + 1]) == best_pair_key:
+                        # Merge the previous token with a new pair
                         if i > 0:
                             previous_pair = (word.tokens[i - 1], word.tokens[i])
                             new_pair = (word.tokens[i - 1], best_pair_key_merged)
@@ -86,6 +87,7 @@ class TokenDictionary:
                             else:
                                 pairs[new_pair] += word.count
                         
+                        # Merge the next token with a new pair
                         if i < len(word.tokens) - 2:
                             next_pair = (word.tokens[i + 1], word.tokens[i + 2])
                             new_pair = (best_pair_key_merged, word.tokens[i + 2])

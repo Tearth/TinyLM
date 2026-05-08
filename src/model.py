@@ -213,6 +213,7 @@ class SelfAttentionLayer(nn.Module):
         self.context_size = context_size
         self.embedding_size = embedding_size
         self.embedding_size_per_head = embedding_size // heads_count
+        self.attention_scale = 1.0 / (self.embedding_size_per_head ** 0.5)
         self.dropout_rate = dropout_rate
 
         # Query-Key-Value matrices unified into one big matrix to reduce separate multiplications
@@ -228,7 +229,7 @@ class SelfAttentionLayer(nn.Module):
         # [ 0, 0, 1 ]
         # [ 0, 0, 0 ]
         self.register_buffer("mask",
-            torch.triu(torch.ones(context_size, context_size, dtype=torch.bool), diagonal=1)
+            torch.triu(torch.ones(1, 1, context_size, context_size, dtype=torch.bool), diagonal=1)
         )
 
     def forward(self, x : Tensor) -> Tensor:
@@ -253,26 +254,26 @@ class SelfAttentionLayer(nn.Module):
         v = v.view(B, S, self.heads_count, self.embedding_size_per_head).transpose(1, 2) # [batch; heads_count; sequence_size; embeddings_size_per_head]
 
         # Reshape precalculated mask to make it compatible with attention_weights
-        mask = self.mask[None, None, :S, :S] # [1; 1; sequence_size; sequence_size] # type: ignore
-
+        mask = self.mask[..., :S, :S] # [1; 1; sequence_size; sequence_size] # type: ignore
+        
         # Calculate attention weights by multiplying Query and transposed Key
-        attention_weights = q @ torch.transpose(k, 2, 3) # [batch; heads_count; sequence_size; sequence_size]
+        attention_weights = q @ k.transpose(2, 3) # [batch; heads_count; sequence_size; sequence_size]
 
         # Apply a precaculated mask, so token can see only preceding attention values
         attention_weights = attention_weights.masked_fill(mask, float("-inf")) # [batch; heads_count; sequence_size; sequence_size]
 
         # Scale and normalize attention weights, so the sum of probability is equal to 1.0
-        attention_weights = torch.softmax(attention_weights / (self.embedding_size_per_head ** 0.5), dim=-1) # [batch; heads_count; sequence_size; sequence_size]
+        attention_weights = torch.softmax(attention_weights * self.attention_scale, dim=-1) # [batch; heads_count; sequence_size; sequence_size]
         attention_weights = self.attention_dropout(attention_weights) # [batch; heads_count; sequence_size; sequence_size]
 
         # Multiply attention weights with Value to get the final values according to their relevance
         attention_value = attention_weights @ v # [batch; heads_count; sequence_size; embedding_size]
         
         # Swap sequence_size with heads_count again, so heads can be merged 
-        attention_value = torch.transpose(attention_value, 1, 2) # [batch; sequence_size; heads_count; embedding_size]
+        attention_value = attention_value.transpose(1, 2) # [batch; sequence_size; heads_count; embedding_size]
 
         # Reshape attention_value to [batch; sequence_size; embedding_size]
-        attention_value = attention_value.contiguous().view(B, S, self.embedding_size) # [batch; sequence_size; embedding_size]
+        attention_value = attention_value.reshape(B, S, self.embedding_size) # [batch; sequence_size; embedding_size]
 
         # Process all separately calculated attention values into coherent output
         output = self.output_matrix(attention_value)

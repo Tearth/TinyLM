@@ -60,6 +60,7 @@ def entry_point_inference(model_path: str, prompt: str, device_name: str) -> Non
     logging.info(f"Device: {device_name}")
     logging.info(f"====================================")
     logging.info(f"Loading model...")
+    torch.no_grad()
     
     model = Model.load(model_path, device_name)
     model.to(model.device)
@@ -114,7 +115,7 @@ def entry_point_training(model_path: str | None, dataset_path: str, output_path:
     logging.info(f"Loading dataset...")
     dataset.load(dataset_path)
 
-    logging.info(f"Done, loaded {len(dataset.data)} bytes ({len(dataset.data) / 1024 / 1024:.2f} MB)")
+    logging.info(f"Done, loaded {len(dataset.data)} tokens")
     logging.info(f"Dataset:")
     logging.info(f"- chunks: {len(dataset)}")
     logging.info(f"- chunk size: {dataset.chunk_size}")
