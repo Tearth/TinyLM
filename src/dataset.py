@@ -6,6 +6,7 @@ from tokens import TokenDictionary
 from torch import Tensor
 from torch.utils.data import Dataset
 
+
 class ModelDataset(Dataset):
     def __init__(self, token_dictionary: TokenDictionary, chunk_size: int, stride: int) -> None:
         self.token_dictionary = token_dictionary
@@ -32,11 +33,11 @@ class ModelDataset(Dataset):
                     logging.debug(f"Read {percent}% ({read_bytes_total}/{file_size} bytes)")
 
         self.data = torch.tensor(buffer)
-    
+
     def __getitem__(self, idx) -> tuple[Tensor, Tensor]:
         position = idx * self.stride
-        features = self.data[position:position+self.chunk_size]
-        labels = self.data[position + 1:position+self.chunk_size + 1]
+        features = self.data[position : position + self.chunk_size]
+        labels = self.data[position + 1 : position + self.chunk_size + 1]
 
         return (features, labels)
 

@@ -2,26 +2,27 @@ import logging
 import time
 import torch
 
-from torch import GradScaler, Tensor, autocast, nn
+from torch import GradScaler, autocast, nn
 from model import Model
 from dataset import Dataset
 from tokens import TokenDictionary
 from torch.utils.data import DataLoader
+
 
 class Trainer:
     def __init__(
         self,
         model: Model,
         output_path: str,
-        dataset: Dataset, 
+        dataset: Dataset,
         token_dictionary: TokenDictionary,
         max_epoch: int,
-        batch_size: int, 
-        learning_rate: float, 
-        beta1: float, 
-        beta2: float, 
+        batch_size: int,
+        learning_rate: float,
+        beta1: float,
+        beta2: float,
         weight_decay: float,
-        save_interval: int
+        save_interval: int,
     ) -> None:
         self.model = model
         self.output_path = output_path
@@ -34,13 +35,15 @@ class Trainer:
         self.beta2 = beta2
         self.weight_decay = weight_decay
         self.save_interval = save_interval
-        
+
+        # fmt: off
         self.dataloader = DataLoader(
             dataset=self.dataset,
             batch_size=self.batch_size,
             shuffle=True
         )
         
+        # fmt: off
         self.optimizer = torch.optim.AdamW(
             model.parameters(),
             lr=self.learning_rate,
@@ -48,6 +51,7 @@ class Trainer:
             weight_decay=self.weight_decay
         )
 
+        # fmt: off
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer=self.optimizer,
             patience=3,
@@ -55,7 +59,6 @@ class Trainer:
         )
 
         self.loss_function = nn.CrossEntropyLoss()
-
         self.model.train()
 
     def run(self) -> None:
@@ -65,7 +68,7 @@ class Trainer:
             batches = 0
             timestamp = time.time()
 
-            for (features_batch, labels_batch) in self.dataloader:
+            for features_batch, labels_batch in self.dataloader:
                 features_batch = features_batch.to(self.model.device)
                 labels_batch = labels_batch.to(self.model.device)
 
@@ -74,10 +77,13 @@ class Trainer:
 
                     # Model output and labels must be flattened first, so there's not explicit batch dimension
                     loss = self.loss_function(
-                        forward_pass_outputs.view(forward_pass_outputs.size(dim=0) * forward_pass_outputs.size(dim=1), forward_pass_outputs.size(dim=2)), 
-                        labels_batch.view(labels_batch.size(dim=0) * labels_batch.size(dim=1))
+                        forward_pass_outputs.view(
+                            forward_pass_outputs.size(dim=0) * forward_pass_outputs.size(dim=1),
+                            forward_pass_outputs.size(dim=2),
+                        ),
+                        labels_batch.view(labels_batch.size(dim=0) * labels_batch.size(dim=1)),
                     )
-                
+
                 self.optimizer.zero_grad()
                 scaler.scale(loss).backward()
                 scaler.step(self.optimizer)
@@ -94,4 +100,6 @@ class Trainer:
             if (epoch % self.save_interval) == 0:
                 self.model.save(self.output_path)
 
-            logging.info(f"Epoch {epoch} done in {delta_time:.2f} seconds, learning rate: {self.optimizer.param_groups[0]["lr"]}, average loss: {average_loss:.4f}")
+            logging.info(
+                f"Epoch {epoch} done in {delta_time:.2f} seconds, learning rate: {self.optimizer.param_groups[0]["lr"]}, average loss: {average_loss:.4f}"
+            )

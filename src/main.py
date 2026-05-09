@@ -9,6 +9,7 @@ from training import Trainer
 from dataset import ModelDataset
 from tokens import TokenDictionary
 
+
 def main() -> None:
     parser = argparse.ArgumentParser()
 
@@ -25,14 +26,14 @@ def main() -> None:
     args = parser.parse_args()
 
     logging.basicConfig(
-        format='%(asctime)s %(levelname)-7s | %(message)s',
+        format="%(asctime)s %(levelname)-7s | %(message)s",
         level=logging.DEBUG,
-        datefmt='%Y-%m-%d %H:%M:%S'
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
 
     if args.inference and not args.model:
         parser.error("--model is required for inference mode")
-        
+
     if args.inference and not args.prompt:
         parser.error("--prompt is required for inference mode")
 
@@ -54,6 +55,7 @@ def main() -> None:
     elif args.training:
         entry_point_training(args.model, args.dataset, args.output, device_name)
 
+
 def entry_point_inference(model_path: str, prompt: str, device_name: str) -> None:
     logging.info(f"========== INFERENCE MODE ==========")
     logging.info(f"Model: {model_path}")
@@ -62,7 +64,7 @@ def entry_point_inference(model_path: str, prompt: str, device_name: str) -> Non
     logging.info(f"====================================")
     logging.info(f"Loading model...")
     torch.no_grad()
-    
+
     timestamp = time.time()
     model = Model.load(model_path, device_name)
     model.to(model.device)
@@ -70,7 +72,7 @@ def entry_point_inference(model_path: str, prompt: str, device_name: str) -> Non
     delta_time = time.time() - timestamp
 
     input = prompt
-    
+
     logging.info(f"Done in {delta_time:.2f} seconds")
     logging.info(f"Model:")
     logging.info(f"- parameters: {model.parameters_count()}")
@@ -86,9 +88,9 @@ def entry_point_inference(model_path: str, prompt: str, device_name: str) -> Non
     print(prompt, end="")
 
     for _ in range(2048):
-        context = input[-model.context_size:]
+        context = input[-model.context_size :]
         context_token_ids = model.token_dictionary.encode_block(context)
-        
+
         candidates = model.predict(context_token_ids, 4)
 
         keys = list(map(lambda x: x[0], candidates))
@@ -99,6 +101,7 @@ def entry_point_inference(model_path: str, prompt: str, device_name: str) -> Non
         input = input + next_token
         print(next_token, end="")
 
+
 def entry_point_training(model_path: str | None, dataset_path: str, output_path: str, device_name: str) -> None:
     logging.info(f"========== TRAINING MODE ==========")
     logging.info(f"Dataset: {dataset_path}")
@@ -107,6 +110,8 @@ def entry_point_training(model_path: str | None, dataset_path: str, output_path:
     logging.info(f"===================================")
 
     token_dictionary = TokenDictionary()
+
+    # fmt: off
     dataset = ModelDataset(
         token_dictionary, 
         chunk_size=256,
@@ -135,7 +140,7 @@ def entry_point_training(model_path: str | None, dataset_path: str, output_path:
 
     if model_path is None:
         logging.info(f"Loading model...")
-    
+
         timestamp = time.time()
         model = Model(
             token_dictionary,
@@ -146,7 +151,7 @@ def entry_point_training(model_path: str | None, dataset_path: str, output_path:
             transformers_count=6,
             heads_count=4,
             ff_network_size=768,
-            dropout_rate=0.1
+            dropout_rate=0.1,
         )
         delta_time = time.time() - timestamp
 
@@ -171,7 +176,7 @@ def entry_point_training(model_path: str | None, dataset_path: str, output_path:
     logging.info(f"- heads count: {model.heads_count}")
     logging.info(f"- ff network size: {model.ff_network_size}")
     logging.info(f"- dropout rate: {model.dropout_rate}")
-    
+
     trainer = Trainer(
         model,
         output_path,
@@ -183,7 +188,7 @@ def entry_point_training(model_path: str | None, dataset_path: str, output_path:
         beta1=0.9,
         beta2=0.95,
         weight_decay=0.01,
-        save_interval=1
+        save_interval=1,
     )
 
     logging.info(f"Trainer:")
@@ -194,8 +199,9 @@ def entry_point_training(model_path: str | None, dataset_path: str, output_path:
     logging.info(f"- beta2: {trainer.beta2}")
     logging.info(f"- weight decay: {trainer.weight_decay}")
     logging.info(f"Switching to training loop")
- 
+
     trainer.run()
+
 
 if __name__ == "__main__":
     try:
