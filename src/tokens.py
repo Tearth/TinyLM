@@ -1,7 +1,8 @@
+from dataclasses import dataclass
 import logging
 import operator
 
-from bidict import ON_DUP_DEFAULT, bidict
+from bidict import bidict
 import regex
 
 UNKNOWN_TOKEN = "⊗"
@@ -10,7 +11,12 @@ NEWLINE_TOKEN = "\n"
 TAG_BEGIN = "<"
 TAG_END = ">"
 
+@dataclass(slots=True)
 class Word:
+    tokens: list[str]
+    count: int
+    tag: bool
+    
     def __init__(self, content: str, count: int) -> None:
         if content.startswith(TAG_BEGIN) and content.endswith(TAG_END):
             self.tokens = [content]
@@ -29,6 +35,9 @@ class TokenDictionary:
         })
         self.next_id = len(self.map)
 
+        self.building_regex_pattern = regex.compile(rf'{TAG_BEGIN}\/?[^{TAG_END}]+\/?{TAG_END}|[\p{{L}}]+|\d+|[\p{{P}}\p{{S}}]')
+        self.encoding_regex_pattern = regex.compile(rf'{TAG_BEGIN}\/?[^{TAG_END}]+\/?{TAG_END}|[\p{{L}}]+|\d+|[\p{{P}}\p{{S}}]|\s')
+
     def build(self, path: str, vocabulary_size: int):
         words = {}
         pairs = {}
@@ -37,7 +46,8 @@ class TokenDictionary:
         # Split dataset and prepare a dictionary of all possible words, symbols and tags
         with open(path, encoding="utf-8") as file:
             for line in file:
-                for substring in regex.findall(rf'{TAG_BEGIN}\/?[^{TAG_END}]+\/?{TAG_END}|[\p{{L}}]+|\d+|[\p{{P}}\p{{S}}]', line):
+                for match in regex.finditer(self.building_regex_pattern, line):
+                    substring = match.group(0)
                     if substring not in words:
                         words[substring] = Word(substring, 1)
                     else:
@@ -45,16 +55,19 @@ class TokenDictionary:
 
         # Calculate the initial dictionary with pairs
         for word in words.values():
+            for token in word.tokens:
+                vocabulary.add(token)
+
             if word.tag:
                 continue
 
             for i in range(0, len(word.tokens) - 1):
                 pair = (word.tokens[i], word.tokens[i + 1])
-                
                 if pair not in pairs:
                     pairs[pair] = word.count
                 else:
                     pairs[pair] += word.count
+
 
         # Merge iteratively the most frequent pairs until the desired token dictionary size is achieved
         while len(vocabulary) < vocabulary_size:
@@ -68,8 +81,6 @@ class TokenDictionary:
             if best_pair_value == 1:
                 break
 
-            vocabulary = set(self.map)
-
             for word in words.values():
                 for i in reversed(range(0, len(word.tokens) - 1)):
                     if (word.tokens[i], word.tokens[i + 1]) == best_pair_key:
@@ -82,10 +93,7 @@ class TokenDictionary:
                             if pairs[previous_pair] == 0:
                                 pairs.pop(previous_pair)
 
-                            if new_pair not in pairs:
-                                pairs[new_pair] = word.count
-                            else:
-                                pairs[new_pair] += word.count
+                            pairs[new_pair] = pairs.get(new_pair, 0) + word.count
                         
                         # Merge the next token with a new pair
                         if i < len(word.tokens) - 2:
@@ -96,19 +104,14 @@ class TokenDictionary:
                             if pairs[next_pair] == 0:
                                 pairs.pop(next_pair)
 
-                            if new_pair not in pairs:
-                                pairs[new_pair] = word.count
-                            else:
-                                pairs[new_pair] += word.count
+                            pairs[new_pair] = pairs.get(new_pair, 0) + word.count
 
-                        word.tokens = word.tokens[:i] + [best_pair_key_merged] + word.tokens[i + 2:]
+                        word.tokens[i:i + 2] = [best_pair_key_merged]
                         pairs[best_pair_key] -= word.count
+                        vocabulary.add(best_pair_key_merged)
 
                         if pairs[best_pair_key] == 0:
                             pairs.pop(best_pair_key)
-                
-                for token in word.tokens:
-                    vocabulary.add(token)
 
         # Fill token dictionary 
         for token in vocabulary:
@@ -120,12 +123,6 @@ class TokenDictionary:
         token_ids = []
         start = 0
         end = len(token)
-
-        if token == WHITESPACE_TOKEN:
-            return [self.encode_whitespace()]
-        
-        if token == NEWLINE_TOKEN:
-            return [self.encode_newline()]
 
         while start < end and end != 0:
             id = self.map.get(token[start:end])
@@ -140,13 +137,21 @@ class TokenDictionary:
                 token_ids.append(self.encode_unknown_token())
 
         return token_ids
+    
+    def encode_line(self, line: str) -> list[int]:
+        token_ids = []
 
+        for match in regex.finditer(self.encoding_regex_pattern, line):
+            token_ids.extend(self.encode_token(match.group(0)))
+
+        return token_ids 
+    
     def encode_block(self, block: str) -> list[int]:
         token_ids = []
 
         for line in block.splitlines(True):
-            for word in regex.findall(rf'{TAG_BEGIN}\/?[^{TAG_END}]+\/?{TAG_END}|[\p{{L}}]+|\d+|[\p{{P}}\p{{S}}]|\s', line):
-                token_ids.extend(self.encode_token(word))
+            for match in regex.finditer(self.encoding_regex_pattern, line):
+                token_ids.extend(self.encode_token(match.group(0)))
 
         return token_ids 
 

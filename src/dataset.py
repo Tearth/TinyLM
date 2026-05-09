@@ -21,7 +21,7 @@ class ModelDataset(Dataset):
 
         with open(path, encoding="utf-8") as file:
             for line in file:
-                buffer.extend(self.token_dictionary.encode_block(line))
+                buffer.extend(self.token_dictionary.encode_line(line))
                 read_bytes += len(line.encode())
 
                 if read_bytes >= file_size / 10:
