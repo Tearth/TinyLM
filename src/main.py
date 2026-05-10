@@ -1,5 +1,6 @@
 import argparse
 import logging
+import os
 import random
 import time
 import torch
@@ -7,7 +8,6 @@ import torch
 from model import Model
 from training import Trainer
 from dataset import ModelDataset
-from tokens import TokenDictionary
 
 
 def main() -> None:
@@ -109,31 +109,38 @@ def entry_point_training(model_path: str | None, dataset_path: str, output_path:
     logging.info(f"Device: {device_name}")
     logging.info(f"===================================")
 
-    token_dictionary = TokenDictionary()
-
     # fmt: off
     dataset = ModelDataset(
-        token_dictionary, 
         chunk_size=256,
         stride=128
     )
+    dataset_binary_path = dataset_path + ".bin"
 
-    if model_path is None:
+    if os.path.isfile(dataset_binary_path):
+        logging.info(f"Loading dataset (found a binary)...")
+
+        timestamp = time.time()
+        dataset.load_bin(dataset_binary_path)
+        delta_time = time.time() - timestamp
+
+        logging.info(f"Done in {delta_time:.2f} seconds, loaded {len(dataset.data)} tokens")
+    else:
         logging.info(f"Building token dictionary...")
 
         timestamp = time.time()
-        token_dictionary.build(dataset_path, 3000)
+        dataset.token_dictionary.build(dataset_path, 3000)
         delta_time = time.time() - timestamp
 
         logging.info(f"Done in {delta_time:.2f} seconds, constructed {len(dataset.token_dictionary.map)} tokens")
+        logging.info(f"Loading dataset and saving to {dataset_binary_path}...")
 
-    logging.info(f"Loading dataset...")
+        timestamp = time.time()
+        dataset.load_txt(dataset_path)
+        dataset.save_bin(dataset_binary_path)
+        delta_time = time.time() - timestamp
 
-    timestamp = time.time()
-    dataset.load(dataset_path)
-    delta_time = time.time() - timestamp
-
-    logging.info(f"Done in {delta_time:.2f} seconds, loaded {len(dataset.data)} tokens")
+        logging.info(f"Done in {delta_time:.2f} seconds, loaded {len(dataset.data)} tokens")
+    
     logging.info(f"Dataset:")
     logging.info(f"- chunks: {len(dataset)}")
     logging.info(f"- chunk size: {dataset.chunk_size}")
@@ -143,9 +150,9 @@ def entry_point_training(model_path: str | None, dataset_path: str, output_path:
 
         timestamp = time.time()
         model = Model(
-            token_dictionary,
+            dataset.token_dictionary,
             device=torch.device(device_name),
-            vocabulary_size=len(token_dictionary.map),
+            vocabulary_size=len(dataset.token_dictionary.map),
             embedding_size=192,
             context_size=256,
             transformers_count=6,
@@ -181,7 +188,6 @@ def entry_point_training(model_path: str | None, dataset_path: str, output_path:
         model,
         output_path,
         dataset,
-        token_dictionary,
         max_epoch=10000,
         batch_size=64,
         learning_rate=0.001,

@@ -7,14 +7,20 @@ from torch import Tensor
 from torch.utils.data import Dataset
 
 
-class ModelDataset(Dataset):
-    def __init__(self, token_dictionary: TokenDictionary, chunk_size: int, stride: int) -> None:
+class ModelDatasetPersistence:
+    def __init__(self, data: Tensor, token_dictionary: TokenDictionary) -> None:
+        self.data = data
         self.token_dictionary = token_dictionary
+
+
+class ModelDataset(Dataset):
+    def __init__(self, chunk_size: int, stride: int) -> None:
+        self.token_dictionary = TokenDictionary()
         self.chunk_size = chunk_size
         self.stride = stride
         self.data = torch.empty(0)
 
-    def load(self, path: str):
+    def load_txt(self, path: str):
         buffer = []
         read_bytes = 0
         read_bytes_total = 0
@@ -33,6 +39,18 @@ class ModelDataset(Dataset):
                     logging.debug(f"Read {percent}% ({read_bytes_total}/{file_size} bytes)")
 
         self.data = torch.tensor(buffer)
+
+    def load_bin(self, path: str):
+        persistence = torch.load(path, weights_only=False)
+        self.data = persistence.data
+        self.token_dictionary = persistence.token_dictionary
+
+    def save_bin(self, path: str):
+        persistence = ModelDatasetPersistence(
+            self.data,
+            self.token_dictionary,
+        )
+        torch.save(persistence, path)
 
     def __getitem__(self, idx) -> tuple[Tensor, Tensor]:
         position = idx * self.stride

@@ -5,7 +5,6 @@ import torch
 from torch import GradScaler, autocast, nn
 from model import Model
 from dataset import Dataset
-from tokens import TokenDictionary
 from torch.utils.data import DataLoader
 
 
@@ -15,7 +14,6 @@ class Trainer:
         model: Model,
         output_path: str,
         dataset: Dataset,
-        token_dictionary: TokenDictionary,
         max_epoch: int,
         batch_size: int,
         learning_rate: float,
@@ -27,7 +25,6 @@ class Trainer:
         self.model = model
         self.output_path = output_path
         self.dataset = dataset
-        self.token_dictionary = token_dictionary
         self.max_epoch = max_epoch
         self.batch_size = batch_size
         self.learning_rate = learning_rate
