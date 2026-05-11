@@ -63,7 +63,6 @@ def entry_point_inference(model_path: str, prompt: str, device_name: str) -> Non
     logging.info(f"Device: {device_name}")
     logging.info(f"====================================")
     logging.info(f"Loading model...")
-    torch.no_grad()
 
     timestamp = time.time()
     model = Model.load(model_path, device_name)
@@ -87,19 +86,20 @@ def entry_point_inference(model_path: str, prompt: str, device_name: str) -> Non
     print("-------------------------------------")
     print(prompt, end="")
 
-    for _ in range(2048):
-        context = input[-model.context_size :]
-        context_token_ids = model.token_dictionary.encode_block(context)
+    with torch.no_grad():
+        for _ in range(2048):
+            context = input[-model.context_size :]
+            context_token_ids = model.token_dictionary.encode_block(context)
 
-        candidates = model.predict(context_token_ids, 4)
+            candidates = model.predict(context_token_ids, 50)
 
-        keys = list(map(lambda x: x[0], candidates))
-        probabilities = list(map(lambda x: x[1], candidates))
-        next_token_id = random.choices(keys, probabilities)[0]
-        next_token = model.token_dictionary.decode_token(next_token_id)
+            keys = list(map(lambda x: x[0], candidates))
+            probabilities = list(map(lambda x: x[1], candidates))
+            next_token_id = random.choices(keys, probabilities)[0]
+            next_token = model.token_dictionary.decode_token(next_token_id)
 
-        input = input + next_token
-        print(next_token, end="")
+            input = input + next_token
+            print(next_token, end="")
 
 
 def entry_point_training(model_path: str | None, dataset_path: str, output_path: str, device_name: str) -> None:

@@ -2,10 +2,12 @@ import logging
 import time
 import torch
 
-from torch import GradScaler, autocast, nn
+from torch import GradScaler, Tensor, autocast, nn
+from dataset import ModelDataset
 from model import Model
-from dataset import Dataset
 from torch.utils.data import DataLoader
+
+from tokens import DOCUMENT_END
 
 
 class Trainer:
@@ -13,7 +15,7 @@ class Trainer:
         self,
         model: Model,
         output_path: str,
-        dataset: Dataset,
+        dataset: ModelDataset,
         max_epoch: int,
         batch_size: int,
         learning_rate: float,
@@ -60,17 +62,19 @@ class Trainer:
 
     def run(self) -> None:
         scaler = GradScaler()
+
         for epoch in range(1, self.max_epoch + 1):
             total_loss = 0
             batches = 0
             timestamp = time.time()
 
-            for features_batch, labels_batch in self.dataloader:
+            for features_batch, labels_batch, document_ids_batch in self.dataloader:
                 features_batch = features_batch.to(self.model.device)
                 labels_batch = labels_batch.to(self.model.device)
+                document_ids_batch = document_ids_batch.to(self.model.device)
 
                 with autocast(device_type=self.model.device.type):
-                    forward_pass_outputs = self.model(features_batch)
+                    forward_pass_outputs = self.model(features_batch, document_ids_batch)
 
                     # Model output and labels must be flattened first, so there's not explicit batch dimension
                     loss = self.loss_function(

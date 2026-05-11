@@ -64,12 +64,22 @@ class Model(nn.Module):
         )
         self.output_layer = OutputLayer(vocabulary_size, embedding_size)
 
+        # fmt: off
+        # Static mask
+        # [ 0, 1, 1 ]
+        # [ 0, 0, 1 ]
+        # [ 0, 0, 0 ]
+        self.register_buffer(
+            "mask", torch.triu(torch.ones(1, 1, context_size, context_size, dtype=torch.bool), diagonal=1)
+        )
+
     def predict(self, token_ids: list[int], candidates: int) -> list[tuple[int, float]]:
         # Prepare input tensor as a single batch
         input_tensor = torch.tensor(token_ids, device=self.device).unsqueeze(0)
+        document_ids = torch.zeros(1, len(token_ids), device=self.device)
 
         # Run inference and extract the last vector, representing a next token probabilities
-        output_tensor = self(input_tensor)
+        output_tensor = self(input_tensor, document_ids)
         output_vector = output_tensor[:, -1, :]
 
         # Normalize probabilities and sort them
@@ -84,12 +94,34 @@ class Model(nn.Module):
 
         return output
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor, document_ids: Tensor) -> Tensor:
+        # Input: [batch; sequence_size]
+        # Output: [batch; sequence_size; vocabulary_size]
+
+        S = x.size(1)
+
+        # Construct document ids mask and adjust shape
+        # [batch; sequence_size; sequence_size]
+        document_ids_mask = document_ids.unsqueeze(1) != document_ids.unsqueeze(2)
+
+        # [batch; 1; sequence_size; sequence_size]
+        document_ids_mask = document_ids_mask.unsqueeze(1)
+
+        # Reshape precalculated mask to make it compatible with attention_weights
+        # [batch; 1; sequence_size; sequence_size]
+        mask = self.mask[..., :S, :S] | document_ids_mask[..., :S, :S]  # type: ignore
+
+        # [batch; sequence_size; embedding_size]
         x = self.embedding_layer(x)
+
+        # [batch; sequence_size; embedding_size]
         x = self.position_encoding_layer(x)
 
         for transformer in self.transformers:
-            x = transformer(x)
+            # [batch; sequence_size; embedding_size]
+            x = transformer(x, mask)
+
+        # [batch; sequence_size; vocabulary_size]
         x = self.output_layer(x)
 
         return x
@@ -175,7 +207,7 @@ class PositionEncodingLayer(nn.Module):
         position_encoding = self.position_matrix(sequence)
 
         # Sum embeddings and unique position vectors
-        x = x + position_encoding.unsqueeze(0)
+        x = x + position_encoding
         x = self.output_dropout(x)
 
         return x
@@ -193,14 +225,14 @@ class TransformerLayer(nn.Module):
         self.ff_network_layer = FeedForwardNetworkLayer(ff_network_size, embedding_size, dropout_rate)
         self.ff_network_norm = nn.LayerNorm(embedding_size)
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor, mask: Tensor) -> Tensor:
         # Input: [batch; sequence_size; embedding_size]
         # Output: [batch; sequence_size; embedding_size]
 
         # Apply self-attention with Pre-LN normalization to stabilize training
         residual = x
         x = self.attention_norm(x)
-        x = self.attention_layer(x)
+        x = self.attention_layer(x, mask)
         x = residual + x
 
         # Apply feed-forward neural network with Pre-LN normalization to stabilize training
@@ -231,20 +263,10 @@ class SelfAttentionLayer(nn.Module):
         self.output_matrix = nn.Linear(embedding_size, embedding_size)
         self.output_dropout = nn.Dropout(self.dropout_rate)
 
-        # fmt: off
-        # Static mask
-        # [ 0, 1, 1 ]
-        # [ 0, 0, 1 ]
-        # [ 0, 0, 0 ]
-        self.register_buffer(
-            "mask", torch.triu(torch.ones(1, 1, context_size, context_size, dtype=torch.bool), diagonal=1)
-        )
-
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor, mask: Tensor) -> Tensor:
         # Input: [batch; sequence_size; embedding_size]
         # Output: [batch; sequence_size; embedding_size]
 
-        # Save input dimensions for later use
         B, S, _ = x.size()
 
         # Embedded tokens are projected into Q, K and V matrices
@@ -262,9 +284,6 @@ class SelfAttentionLayer(nn.Module):
         q = q.view(B, S, self.heads_count, self.embedding_size_per_head).transpose(1, 2)
         k = k.view(B, S, self.heads_count, self.embedding_size_per_head).transpose(1, 2)
         v = v.view(B, S, self.heads_count, self.embedding_size_per_head).transpose(1, 2)
-
-        # Reshape precalculated mask to make it compatible with attention_weights
-        mask = self.mask[..., :S, :S]  # [1; 1; sequence_size; sequence_size] # type: ignore
 
         # Calculate attention weights by multiplying Query and transposed Key
         # [batch; heads_count; sequence_size; sequence_size]

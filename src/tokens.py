@@ -10,6 +10,7 @@ WHITESPACE_TOKEN = " "
 NEWLINE_TOKEN = "\n"
 TAG_BEGIN = "<"
 TAG_END = ">"
+DOCUMENT_END = "<end/>"
 
 
 @dataclass(slots=True)
