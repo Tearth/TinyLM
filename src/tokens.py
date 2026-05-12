@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import logging
 import operator
+import unicodedata
 
 from bidict import bidict
 import regex
@@ -42,6 +43,17 @@ class TokenDictionary:
         self.building_regex_pattern = regex.compile(rf"{TAG_BEGIN}\/?[^{TAG_END}]+\/?{TAG_END}|[\p{{L}}]+|\d+|[\p{{P}}\p{{S}}]")
         self.encoding_regex_pattern = regex.compile(rf"{TAG_BEGIN}\/?[^{TAG_END}]+\/?{TAG_END}|[\p{{L}}]+|\d+|[\p{{P}}\p{{S}}]|\s")
 
+        # fmt: off
+        self.charset_replacements = {
+            '“': "\"",
+            '”': "\"",
+            '‘': "'",
+            '’': "'",
+            '–': "-",
+            '—': "-",
+            "−": "-"
+        }
+
     def build(self, path: str, vocabulary_size: int):
         words = {}
         pairs = {}
@@ -51,7 +63,7 @@ class TokenDictionary:
         with open(path, encoding="utf-8") as file:
             for line in file:
                 for match in regex.finditer(self.building_regex_pattern, line):
-                    substring = match.group(0)
+                    substring = self.simplify_charset(match.group(0))
                     if substring not in words:
                         words[substring] = Word(substring, 1)
                     else:
@@ -145,7 +157,7 @@ class TokenDictionary:
         token_ids = []
 
         for match in regex.finditer(self.encoding_regex_pattern, line):
-            token_ids.extend(self.encode_token(match.group(0)))
+            token_ids.extend(self.encode_token(self.simplify_charset(match.group(0))))
 
         return token_ids
 
@@ -154,7 +166,7 @@ class TokenDictionary:
 
         for line in block.splitlines(True):
             for match in regex.finditer(self.encoding_regex_pattern, line):
-                token_ids.extend(self.encode_token(match.group(0)))
+                token_ids.extend(self.encode_token(self.simplify_charset(match.group(0))))
 
         return token_ids
 
@@ -169,3 +181,11 @@ class TokenDictionary:
 
     def decode_token(self, id: int) -> str:
         return self.map.inverse[id]
+
+    def simplify_charset(self, string: str) -> str:
+        result = ""
+
+        for char in string:
+            result += self.charset_replacements.get(char, char)
+
+        return unicodedata.normalize("NFKD", result).encode("ascii", "ignore").decode("ascii", "ignore")
